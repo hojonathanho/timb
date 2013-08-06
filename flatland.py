@@ -153,7 +153,8 @@ class Render2d(Renderer):
         cv2.fillPoly(self.image, [np.int32(xys)], self.color)
     def point(self, XY):
         x, y = self.P[:2,:2].dot(XY) + self.P[:2,2]
-        cv2.circle(self.image, (int(x), int(y)), 1, self.color)
+        self.image[int(y), int(x), :] = self.color
+        #cv2.circle(self.image, (int(x), int(y)), 1, self.color)
 
 class Drawable(object):
     def draw(self, renderer):
@@ -190,6 +191,7 @@ def rotation2d(a):
     return np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
 
 def show_2d_image(image, windowname="default2d"):
+    image = cv2.resize(image, (500, 500), interpolation=cv2.INTER_NEAREST)
     cv2.imshow(windowname, image)
 def show_1d_image(images, windowname="default1d"):
     images = np.atleast_3d(np.asarray(images))
