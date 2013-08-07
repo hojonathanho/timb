@@ -4,12 +4,12 @@ import numpy as np
 import cv2
 from scipy.ndimage.morphology import distance_transform_edt
 
-def show_vector_field(field_mn2, windowname):
+def show_vector_field(origins, field_mn2, windowname):
   size = 10
   center_inds = np.dstack(np.meshgrid(np.arange(0, field_mn2.shape[0], size), np.arange(0, field_mn2.shape[1], size))).reshape((-1, 2))
   img = np.zeros((field_mn2.shape[0], field_mn2.shape[1], 3))
-  img[center_inds] = (1., 1., 1.)
-  cv2.imshow(windowname, img)
+  img[center_inds[0],center_inds[1],:] = (1., 1., 1.)
+  flatland.show_2d_image(img, windowname)
 
 def grid_interp(grid, u):
   ''' bilinear interpolation '''
@@ -35,63 +35,169 @@ def test():
 
 test()
 
+class BasicFunction(object):
+  def __init__(self, xmin, xmax, ymin, ymax, init_f):
+    # coordinate mapping: (xmin, ymin) -> (0, 0), (xmax, ymax) -> (init_f.shape[0]-1, init_f.shape[1]-1)
+    self.xmin, self.xmax = xmin, xmax
+    self.ymin, self.ymax = ymin, ymax
+    self.f = np.atleast_3d(init_f)
+    self.output_dim = self.f.shape[2]
 
+  def to_inds(self, xs, ys):
+    assert len(xs) == len(ys)# and (xs >= self.xmin).all() and (xs <= self.xmax).all() and (ys >= self.ymin).all() and (ys <= self.ymax).all()
+    ixs = (xs - self.xmin)*(self.f.shape[0] - 1.)/(self.xmax - self.xmin)
+    iys = (ys - self.ymin)*(self.f.shape[1] - 1.)/(self.ymax - self.ymin)
+    return ixs, iys
 
-def _eval_cost(size, obs, prev_sdf, sdf, u):
-  ''' everything in image coordinates '''
+  def eval(self, xs, ys):
+    ixs, iys = self.to_inds(xs, ys)
+    float_inds = np.c_[ixs, iys]
+    out = np.empty((len(xs), self.output_dim))
+    for d in range(self.output_dim):
+      out[:,d] = grid_interp(self.f[:,:,d], float_inds)
+    return np.squeeze(out)
+
+  @classmethod
+  def FromImage(cls, xmin, xmax, ymin, ymax, img):
+    f = np.fliplr(np.flipud(img))
+    return cls(xmin, xmax, ymin, ymax, f)
+
+  def to_image_fmt(self):
+    return np.squeeze(np.fliplr(np.flipud(self.f)))
+
+  def copy(self):
+    return BasicFunction(self.xmin, self.xmax, self.ymin, self.ymax, self.f.copy())
+
+  def flow(self, u):
+    assert (u.xmin, u.xmax, u.ymin, u.ymax) == (self.xmin, self.xmax, self.ymin, self.ymax)
+    assert u.f.shape[:2] == self.f.shape[:2] and u.f.shape[2] == 2
+
+    grid = np.transpose(np.meshgrid(np.linspace(self.xmin, self.xmax, self.f.shape[0]), np.linspace(self.ymin, self.ymax, self.f.shape[1])))
+    assert u.f.shape == grid.shape
+    grid += u.f
+
+    new_f = self.eval(grid.reshape((-1,2))[:,0], grid.reshape((-1,2))[:,1]).reshape(self.f.shape)
+    return BasicFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
+
+# def _eval_cost(T_pixel_world, obs, prev_sdf, sdf, u):
+#   ''' everything in world coordinates '''
+
+#   assert np.allclose(T_pixel_world[0,0], T_pixel_world[1,1]) # this code doesn't work otherwise
+#   sdf_pixel_size = 1./abs(T_pixel_world[0,0])
+
+#   total = 0.
+
+#   # small flow
+#   flow_cost = (u**2).sum() * sdf_pixel_size*sdf_pixel_size
+#   print 'flow cost', flow_cost
+#   total += flow_cost
+
+#   # sdf and flow agree
+#   pixel_grid = np.transpose(np.meshgrid(np.linspace(0, len(sdf)-1, len(sdf)), np.linspace(0, len(sdf)-1, len(sdf))))
+#   shifted_pixels = pixel_grid + u.reshape((-1,2)).dot(T_pixel_world[:2,:2].T).reshape(pixel_grid.shape)
+#   shifted_sdf = grid_interp(sdf, shifted_pixels.reshape((-1,2))).reshape(sdf.shape)
+#   agree_cost = ((shifted_sdf - prev_sdf)**2).sum() * sdf_pixel_size*sdf_pixel_size
+#   print 'agree', agree_cost
+#   total += agree_cost
+
+#   # sdf is zero at observation points
+#   obs_px = obs.dot(T_pixel_world[:2,:2].T) + T_pixel_world[:2,2][None,:]
+#   sdf_at_obs = grid_interp(sdf, obs_px)
+#   obs_cost = (sdf_at_obs**2).sum() #* sdf_pixel_size*sdf_pixel_size
+#   print 'obs cost', obs_cost
+#   total += obs_cost
+
+#   return total
+
+def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u):
+  ''' everything in world coordinates '''
 
   total = 0.
 
   # small flow
-  flow_cost = (u**2).sum() / size/size
+  flow_cost = (u.f**2).sum() * pixel_area
   print 'flow cost', flow_cost
   total += flow_cost
 
   # sdf and flow agree
-  print u.shape
-  shifted_x = np.transpose(np.meshgrid(np.linspace(0, size-1, size), np.linspace(0, size-1, size))) + u
-  shifted_sdf = grid_interp(sdf, shifted_x.reshape((-1,2))).reshape(sdf.shape)
-  agree_cost = ((shifted_sdf - prev_sdf)**2).sum() / size/size
+  shifted_sdf = sdf.flow(u)
+  agree_cost = ((shifted_sdf.f - prev_sdf.f)**2).sum() * pixel_area
   print 'agree', agree_cost
   total += agree_cost
 
   # sdf is zero at observation points
-  sdf_at_obs = grid_interp(sdf, obs)
-  obs_cost = (sdf_at_obs**2).sum() / size/size
+  #obs_px = obs.dot(T_pixel_world[:2,:2].T) + T_pixel_world[:2,2][None,:]
+  #sdf_at_obs = grid_interp(sdf, obs_px)
+  sdf_at_obs = sdf.eval(obs_n2[:,0], obs_n2[:,1])
+  obs_cost = (sdf_at_obs**2).sum() * pixel_area
   print 'obs cost', obs_cost
   total += obs_cost
 
   return total
 
 
+SIZE = 500
+WORLD_MIN = (-1, -1)
+WORLD_MAX = (1, 1)
+PIXEL_AREA = 4./SIZE/SIZE
+PIXEL_SIDE = 2./SIZE
 
 class Tracker(object):
-  def __init__(self, size, init_sdf):
-    self.size = size
+  def __init__(self, init_sdf):#T_pixel_world, init_sdf):
     self.sdf = init_sdf
-    self.curr_u = np.zeros((size, size, 2))
+    self.prev_sdf = init_sdf.copy()
+    #self.T_pixel_world = T_pixel_world
+    self.curr_u = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.zeros(self.sdf.f.shape[:2] + (2,))+[1,0])
     self.curr_obs = None
 
   def observe(self, obs_n2):
     self.curr_obs = obs_n2
 
-  def eval_cost(self, prev_sdf, sdf, u):
-    return _eval_cost(self.size, self.curr_obs, prev_sdf, sdf, u)
+  def eval_cost(self, sdf, u):
+    return _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, sdf, u)
 
   def plot(self):
-    #show_vector_field(self.curr_u, "u")
-
+    # plot current sdf
     cmap = np.zeros((256, 3),dtype='uint8')
     cmap[:,0] = range(256)
     cmap[:,2] = range(256)[::-1]
     cmap[0] = [0,0,0]
-    flatland.show_2d_image(cmap[np.fmin((self.sdf*255).astype('int'), 255)], "sdf")
+    print self.sdf.to_image_fmt().max()
+    flatland.show_2d_image(cmap[np.fmin((self.sdf.to_image_fmt()*255).astype('int'), 255)], "sdf")
 
-    cost = self.eval_cost(self.sdf, self.sdf, np.zeros((self.size, self.size, 2))+[0,1])
+    # plot flow field
+    #show_vector_field(self.curr_u, "u")
+
+    cost = self.eval_cost(self.sdf, self.curr_u)
     print 'total cost', cost
 
-SIZE = 200
-# M_TO_PX = SIZE/2.
+  def optimize(self):
+    self.prev_sdf = self.sdf
+
+    import scipy.optimize
+    self.i = 0
+    def func(x):
+      sdf = x[:self.sdf.size].reshape(self.sdf.shape)
+      u = x[self.sdf.size:].reshape(self.curr_u.shape)
+      cost = self.eval_cost(sdf, u)
+      self.i += 1
+      if self.i % 1000 == 0:
+        self.plot()
+        cv2.waitKey()
+      return cost
+    x0 = np.r_[self.prev_sdf.flatten(), np.zeros_like(self.curr_u).flatten()]
+    result = scipy.optimize.fmin_cg(func, x0)
+    new_sdf = result[:self.sdf.size].reshape(self.sdf.shape)
+    new_u = result[self.sdf.size:].reshape(self.curr_u.shape)
+
+    # print 'Results'
+    # print new_sdf
+    # print new_u
+
+    self.sdf = new_sdf
+    self.curr_u = new_u
+    return new_sdf, new_u
+
 def main():
   #poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
   poly = flatland.Polygon([[0, 0], [1,0]])#, [1,1], [1,0]])
@@ -100,7 +206,7 @@ def main():
   r_angle = 0
   fov = 75 * np.pi/180.
   cam1d = flatland.Camera1d(cam_t, r_angle, fov, SIZE)
-  cam2d = flatland.Camera2d((-1,-1), (1,1), SIZE)
+  cam2d = flatland.Camera2d(WORLD_MIN, WORLD_MAX, SIZE)
 
   tracker = None
 
@@ -128,14 +234,6 @@ def main():
     key = cv2.waitKey() & 255
     print "key", key
 
-    # mac
-    # if key == 63234:
-    #     cam1d.r_angle -= .1
-    # elif key == 63235:
-    #     cam1d.r_angle += .1
-    # elif key == 113:
-    #     break
-
     # linux
     if key == 81:
         #cam1d.r_angle -= .1
@@ -156,19 +254,28 @@ def main():
         init_state_edge = np.ones((SIZE, SIZE), dtype=int)
         is_edge = image2d[:,:,0] > .5
         init_state_edge[is_edge] = 0
-        init_sdf = distance_transform_edt(init_state_edge) / SIZE * 2.
+        init_sdf_img = distance_transform_edt(init_state_edge) * PIXEL_SIDE
         # negate inside the boundary
         orig_filling = [p.filled for p in polylist]
         for p in polylist: p.filled = True
         image2d_filled = cam2d.render(polylist)
         for orig, p in zip(orig_filling, polylist): p.filled = orig
-        init_sdf[image2d_filled[:,:,0] > .5] *= -1
+        init_sdf_img[image2d_filled[:,:,0] > .5] *= -1
 
-        tracker = Tracker(SIZE, init_sdf)
-        P = flatland.Render2d(cam2d.bl, cam2d.tr, cam2d.width).P
-        obs = np.fliplr((filtered_obs_XYs.dot(P[:2,:2].T) + P[:2,2][None,:]).astype(int))
+        init_sdf = BasicFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
+
+        #T_pixel_world = flatland.Render2d(cam2d.bl, cam2d.tr, cam2d.width).P
+        #T_pixel_world[:2,2] += .5
+        #print 'T_pixel_world', T_pixel_world
+        #tracker = Tracker(T_pixel_world, init_sdf)
+        tracker = Tracker(init_sdf)
+        # obs = np.fliplr((filtered_obs_XYs.dot(P[:2,:2].T) + P[:2,2][None,:]).astype(int))
+        obs = filtered_obs_XYs
         tracker.observe(obs)
-        tracker.plot()
+        for i in range(10000):
+          #new_sdf, new_u = tracker.optimize()
+          tracker.plot()
+          cv2.waitKey()
 
 if __name__ == '__main__':
   main()

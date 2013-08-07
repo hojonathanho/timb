@@ -145,7 +145,7 @@ class Render2d(Renderer):
         self.color = (1.,1.,1.)
     def line(self, XY0, XY1):
         x0, y0 = self.P[:2,:2].dot(XY0) + self.P[:2,2]
-        x1, y1 = self.P[:2,:2].dot(XY1) + self.P[:2,2]        
+        x1, y1 = self.P[:2,:2].dot(XY1) + self.P[:2,2]
         cv2.line(self.image, (int(x0), int(y0)), (int(x1), int(y1)), self.color)
     def fillpoly(self, XYs):
         XYs = np.asarray(XYs)
