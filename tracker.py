@@ -25,7 +25,7 @@ def grid_interp(grid, u):
   assert len(out) == len(u)
   return out
 
-class BasicFunction(object):
+class SpatialFunction(object):
   def __init__(self, xmin, xmax, ymin, ymax, f):
     # coordinate mapping: (xmin, ymin) -> (0, 0), (xmax, ymax) -> (f.shape[0]-1, f.shape[1]-1)
     self.xmin, self.xmax = xmin, xmax
@@ -69,7 +69,7 @@ class BasicFunction(object):
     return np.flipud(np.fliplr(np.squeeze(self._f))).T
 
   def copy(self):
-    return BasicFunction(self.xmin, self.xmax, self.ymin, self.ymax, self._f.copy())
+    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, self._f.copy())
 
   def flow(self, u):
     assert (u.xmin, u.xmax, u.ymin, u.ymax) == (self.xmin, self.xmax, self.ymin, self.ymax)
@@ -80,7 +80,7 @@ class BasicFunction(object):
     grid -= u._f
 
     new_f = self.eval_xys(grid.reshape((-1,2))).reshape(self._f.shape)
-    return BasicFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
+    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
 
 def run_tests():
   import unittest
@@ -100,22 +100,22 @@ def run_tests():
 
     def test_func_eval(self):
       data = np.random.rand(4, 5)
-      f = BasicFunction(-1, 1,  6, 7, data)
+      f = SpatialFunction(-1, 1,  6, 7, data)
       coords = np.transpose(np.meshgrid(np.linspace(-1, 1, 4), np.linspace(6, 7, 5)))
       vals = f.eval_xys(coords.reshape((-1,2))).reshape(data.shape)
       self.assertTrue(np.allclose(vals, data))
 
     def test_flow(self):
       data = np.random.rand(4, 5)
-      f = BasicFunction(-1, 1,  6, 8, data)
+      f = SpatialFunction(-1, 1,  6, 8, data)
 
-      zero_flow = BasicFunction(-1, 1, 6, 8, np.zeros(data.shape + (2,)))
+      zero_flow = SpatialFunction(-1, 1, 6, 8, np.zeros(data.shape + (2,)))
       f2 = f.flow(zero_flow)
       self.assertTrue(np.allclose(f2.data(), data))
 
       x_flow_data = np.zeros(data.shape + (2,))
       x_flow_data[:,:,0] = 2./3.
-      x_flow = BasicFunction(-1, 1, 6, 8, x_flow_data)
+      x_flow = SpatialFunction(-1, 1, 6, 8, x_flow_data)
       f3 = f.flow(x_flow)
       self.assertTrue(np.allclose(f3.data()[1:,:], data[:-1,:]))
       self.assertTrue(np.allclose(f3.data()[0,:], data[0,:]))
@@ -125,44 +125,50 @@ def run_tests():
   unittest.TextTestRunner(verbosity=2).run(suite)
 
 
-def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
+def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_full=False):
   ''' everything in world coordinates '''
 
   total = 0.
+  costs = {}
 
   # small flow
-  # flow_cost = (u.data()**2).sum() * pixel_area
+  flow_cost = (u.data()**2).sum() * pixel_area
   # print 'flow cost', flow_cost
-  # total += flow_cost
+  costs['flow'] = flow_cost
+  total += flow_cost
 
   # sdf and flow agree
-  # shifted_sdf = prev_sdf.flow(u)
-  # agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
+  shifted_sdf = prev_sdf.flow(u)
+  agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
   # print 'agree', agree_cost
-  # total += agree_cost
+  total += agree_cost
 
   # sdf is zero at observation points
   if not ignore_obs:
     sdf_at_obs = sdf.eval_xys(obs_n2)
-    print 'sdf at obs', sdf_at_obs
-    print 'sdf max', sdf.data().max()
+    # print 'sdf at obs', sdf_at_obs
+    # print 'sdf max', sdf.data().max()
     obs_cost = (sdf_at_obs**2).sum() * np.sqrt(pixel_area)
-    print 'obs cost', obs_cost
+    # print 'obs cost', obs_cost
+    costs['obs'] = obs_cost
+    costs['sdf_at_obs'] = sdf_at_obs
     total += obs_cost
 
+  if return_full:
+    return total, costs
   return total
 
 
-def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
-  out = np.zeros(sdf.size + u.size)
-  if not ignore_obs:
-    sdf_at_obs = sdf.eval_xys(obs_n2)
-    print 'sdf at obs', sdf_at_obs
-    print 'sdf max', sdf.data().max()
-    obs_cost = (sdf_at_obs**2).sum() * np.sqrt(pixel_area)
-    print 'obs cost', obs_cost
-    total += obs_cost
-  return out
+# def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
+#   out = np.zeros(sdf.size + u.size)
+#   if not ignore_obs:
+#     sdf_at_obs = sdf.eval_xys(obs_n2)
+#     print 'sdf at obs', sdf_at_obs
+#     print 'sdf max', sdf.data().max()
+#     obs_cost = (sdf_at_obs**2).sum() * np.sqrt(pixel_area)
+#     print 'obs cost', obs_cost
+#     total += obs_cost
+#   return out
 
 
 SIZE = 10
@@ -175,7 +181,7 @@ class Tracker(object):
   def __init__(self, init_sdf):
     self.sdf = init_sdf
     self.prev_sdf = init_sdf.copy()
-    self.curr_u = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.zeros(self.sdf.shape() + (2,)))#+[1,0])
+    self.curr_u = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.zeros(self.sdf.shape() + (2,)))#+[1,0])
     self.curr_obs = None
 
   def reset_sdf(self, sdf):
@@ -185,8 +191,8 @@ class Tracker(object):
   def observe(self, obs_n2):
     self.curr_obs = obs_n2
 
-  def eval_cost(self, sdf, u):
-    return _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, sdf, u)
+  def eval_cost(self, sdf, u, return_full=False):
+    return _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, sdf, u, return_full=return_full)
 
   def plot(self):
     # plot current sdf
@@ -198,13 +204,14 @@ class Tracker(object):
     cmap[:,0] = range(256)
     cmap[:,2] = range(256)[::-1]
     cmap[0] = [0,0,0]
-    flatland.show_2d_image(cmap[np.fmin((self.sdf.to_image_fmt()*255).astype('int'), 255)], "sdf")
+    flatland.show_2d_image(cmap[np.fmin((np.clip(self.sdf.to_image_fmt(), 0, np.inf)*255).astype('int'), 255)], "sdf")
 
     # plot flow field
     #show_vector_field(self.curr_u, "u")
 
-    cost = _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, self.sdf, self.curr_u, ignore_obs=self.curr_obs is None)
-    print 'total cost', cost
+    total, costs = _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, self.sdf, self.curr_u, ignore_obs=self.curr_obs is None, return_full=True)
+    print 'total cost', total
+    print 'individual costs', costs
 
   def optimize(self):
     self.prev_sdf = self.sdf
@@ -213,8 +220,8 @@ class Tracker(object):
     def state_to_vec(sdf, u):
       return np.concatenate((sdf.data().flatten(), u.data().flatten()))
     def vec_to_state(vec):
-      sdf = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()))
-      u = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.shape()))
+      sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()))
+      u = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.shape()))
       return sdf, u
 
     tmp_sdf, tmp_u = vec_to_state(state_to_vec(self.sdf, self.curr_u))
@@ -232,12 +239,18 @@ class Tracker(object):
       #   cv2.waitKey()
       return cost
     x0 = state_to_vec(self.prev_sdf, self.curr_u) # zero u?
-    xopt = scipy.optimize.fmin_cg(func, x0, epsilon=1e-5, disp=True)
+
+    print 'initial costs:', self.eval_cost(self.prev_sdf, self.curr_u, return_full=True)
+    print 'old sdf\n', self.prev_sdf.data()
+
+    xopt = scipy.optimize.fmin_cg(func, x0, epsilon=1e-5, disp=True, maxiter=20)
     new_sdf, new_u = vec_to_state(xopt)
 
     # print 'Results'
     # print new_sdf
     # print new_u
+    print 'final costs:', self.eval_cost(new_sdf, new_u, return_full=True)
+    print 'new sdf\n', new_sdf.data()
     self.sdf, self.curr_u = new_sdf, new_u
     print 'Num evals:', self.i
     return new_sdf, new_u
@@ -251,8 +264,8 @@ def main():
   if args.test:
     run_tests()
 
-  #poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
-  poly = flatland.Polygon([[0, 0], [1,0]])#, [1,1], [1,0]])
+  poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
+  #poly = flatland.Polygon([[0, 0], [1, 0]])#, [1,1], [1,0]])
   polylist = [poly]
   cam_t = (0, -.5)
   r_angle = 0
@@ -260,11 +273,12 @@ def main():
   cam1d = flatland.Camera1d(cam_t, r_angle, fov, SIZE)
   cam2d = flatland.Camera2d(WORLD_MIN, WORLD_MAX, SIZE)
 
-  empty_sdf = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.ones((SIZE, SIZE)))
+  empty_sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.ones((SIZE, SIZE)))
   tracker = Tracker(empty_sdf)
 
   while True:
     image1d, depth1d = cam1d.render(polylist)
+    print 'depth1d', depth1d
 
     depth_min, depth_max = 0, 1
     depth1d_normalized = (np.clip(depth1d, depth_min, depth_max) - depth_min)/(depth_max - depth_min)
@@ -287,15 +301,18 @@ def main():
 
     # linux
     if key == 81:
-        #cam1d.r_angle -= .1
         cam1d.t[0] += .1
     elif key == 82:
         cam1d.t[1] += .1
     elif key == 84:
         cam1d.t[1] -= .1
     elif key == 83:
-        #cam1d.r_angle += .1
         cam1d.t[0] -= .1
+    elif key == ord('-'):
+        cam1d.r_angle -= .1
+    elif key == ord('='):
+        cam1d.r_angle += .1
+
     elif key == ord('q'):
         break
 
@@ -318,7 +335,7 @@ def main():
       image2d_filled = cam2d.render(polylist)
       for orig, p in zip(orig_filling, polylist): p.filled = orig
       init_sdf_img[image2d_filled[:,:,0] > .5] *= -1
-      init_sdf = BasicFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
+      init_sdf = SpatialFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
 
       tracker = Tracker(init_sdf)
       tracker.observe(filtered_obs_XYs)
@@ -331,12 +348,8 @@ def main():
       print 'observed.'
 
     elif key == ord(' '):
-      nsteps = 10
-      print 'starting optimization for %d steps' % nsteps
-      for s in range(nsteps):
-        tracker.optimize()
-        tracker.plot()
-        cv2.waitKey()
+      tracker.optimize()
+      tracker.plot()
 
 
 
