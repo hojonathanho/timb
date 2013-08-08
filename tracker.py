@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 from scipy.ndimage.morphology import distance_transform_edt
+np.set_printoptions(linewidth=10000)
 
 def show_vector_field(origins, field_mn2, windowname):
   size = 10
@@ -22,18 +23,6 @@ def grid_interp(grid, u):
   out = (1.-dy)*((1.-dx)*grid[ax,ay] + dx*grid[bx,ay]) + dy*((1.-dx)*grid[ax,by] + dx*grid[bx,by])
   assert len(out) == len(u)
   return out
-def test():
-  n, m = 5, 4
-  grid = np.random.rand(n, m)
-  u = np.transpose(np.meshgrid(np.linspace(0, n-1, n), np.linspace(0, m-1, m)))
-  g2 = grid_interp(grid, u.reshape((-1, 2))).reshape((n, m))
-  assert np.allclose(grid, g2)
-
-  for j in range(1,m):
-    g3 = grid_interp(grid, (u + [0,j]).reshape((-1, 2))).reshape((n, m))
-    assert np.allclose(grid[:,j:], g3[:,:-j]) and np.allclose(g3[:,-1], grid[:,-1])
-
-test()
 
 class BasicFunction(object):
   def __init__(self, xmin, xmax, ymin, ymax, init_f):
@@ -45,9 +34,15 @@ class BasicFunction(object):
 
   def to_inds(self, xs, ys):
     assert len(xs) == len(ys)# and (xs >= self.xmin).all() and (xs <= self.xmax).all() and (ys >= self.ymin).all() and (ys <= self.ymax).all()
+    print 'converting', xs, ys
     ixs = (xs - self.xmin)*(self.f.shape[0] - 1.)/(self.xmax - self.xmin)
     iys = (ys - self.ymin)*(self.f.shape[1] - 1.)/(self.ymax - self.ymin)
+    #import IPython; IPython.embed()
     return ixs, iys
+
+  def eval_xys(self, xys):
+    assert xys.shape[1] == 2
+    return self.eval(xys[:,0], xys[:,1])
 
   def eval(self, xs, ys):
     ixs, iys = self.to_inds(xs, ys)
@@ -57,13 +52,16 @@ class BasicFunction(object):
       out[:,d] = grid_interp(self.f[:,:,d], float_inds)
     return np.squeeze(out)
 
+  def data(self):
+    return np.squeeze(self.f)
+
   @classmethod
   def FromImage(cls, xmin, xmax, ymin, ymax, img):
-    f = np.fliplr(np.flipud(img))
+    f = np.fliplr(np.flipud(img)).T
     return cls(xmin, xmax, ymin, ymax, f)
 
   def to_image_fmt(self):
-    return np.squeeze(np.fliplr(np.flipud(self.f)))
+    return np.flipud(np.fliplr(np.squeeze(self.f).T))
 
   def copy(self):
     return BasicFunction(self.xmin, self.xmax, self.ymin, self.ymax, self.f.copy())
@@ -74,10 +72,52 @@ class BasicFunction(object):
 
     grid = np.transpose(np.meshgrid(np.linspace(self.xmin, self.xmax, self.f.shape[0]), np.linspace(self.ymin, self.ymax, self.f.shape[1])))
     assert u.f.shape == grid.shape
-    grid += u.f
+    grid -= u.f
 
-    new_f = self.eval(grid.reshape((-1,2))[:,0], grid.reshape((-1,2))[:,1]).reshape(self.f.shape)
+    new_f = self.eval_xys(grid.reshape((-1,2))).reshape(self.f.shape)
     return BasicFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
+
+def run_tests():
+  import unittest
+  class Tests(unittest.TestCase):
+
+    def test_grid_interp(self):
+      n, m = 5, 4
+      grid = np.random.rand(n, m)
+      u = np.transpose(np.meshgrid(np.linspace(0, n-1, n), np.linspace(0, m-1, m)))
+      g2 = grid_interp(grid, u.reshape((-1, 2))).reshape((n, m))
+      self.assertTrue(np.allclose(grid, g2))
+
+      for j in range(1,m):
+        g3 = grid_interp(grid, (u + [0,j]).reshape((-1, 2))).reshape((n, m))
+        self.assertTrue(np.allclose(grid[:,j:], g3[:,:-j]))
+        self.assertTrue(np.allclose(g3[:,-1], grid[:,-1]))
+
+    def test_func_eval(self):
+      data = np.random.rand(4, 5)
+      f = BasicFunction(-1, 1,  6, 7, data)
+      coords = np.transpose(np.meshgrid(np.linspace(-1, 1, 4), np.linspace(6, 7, 5)))
+      vals = f.eval_xys(coords.reshape((-1,2))).reshape(data.shape)
+      self.assertTrue(np.allclose(vals, data))
+
+    def test_flow(self):
+      data = np.random.rand(4, 5)
+      f = BasicFunction(-1, 1,  6, 8, data)
+
+      zero_flow = BasicFunction(-1, 1, 6, 8, np.zeros(data.shape + (2,)))
+      f2 = f.flow(zero_flow)
+      self.assertTrue(np.allclose(f2.data(), data))
+
+      x_flow_data = np.zeros(data.shape + (2,))
+      x_flow_data[:,:,0] = 2./3.
+      x_flow = BasicFunction(-1, 1, 6, 8, x_flow_data)
+      f3 = f.flow(x_flow)
+      self.assertTrue(np.allclose(f3.data()[1:,:], data[:-1,:]))
+      self.assertTrue(np.allclose(f3.data()[0,:], data[0,:]))
+
+
+  suite = unittest.TestLoader().loadTestsFromTestCase(Tests)
+  unittest.TextTestRunner(verbosity=2).run(suite)
 
 # def _eval_cost(T_pixel_world, obs, prev_sdf, sdf, u):
 #   ''' everything in world coordinates '''
@@ -115,39 +155,40 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u):
   total = 0.
 
   # small flow
-  flow_cost = (u.f**2).sum() * pixel_area
+  flow_cost = (u.data()**2).sum() * pixel_area
   print 'flow cost', flow_cost
   total += flow_cost
 
   # sdf and flow agree
-  shifted_sdf = sdf.flow(u)
-  agree_cost = ((shifted_sdf.f - prev_sdf.f)**2).sum() * pixel_area
+  shifted_sdf = prev_sdf.flow(u)
+  agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
   print 'agree', agree_cost
   total += agree_cost
 
   # sdf is zero at observation points
   #obs_px = obs.dot(T_pixel_world[:2,:2].T) + T_pixel_world[:2,2][None,:]
   #sdf_at_obs = grid_interp(sdf, obs_px)
-  sdf_at_obs = sdf.eval(obs_n2[:,0], obs_n2[:,1])
-  obs_cost = (sdf_at_obs**2).sum() * pixel_area
+  sdf_at_obs = sdf.eval_xys(obs_n2)
+  print 'sdf at obs', sdf_at_obs
+  print 'sdf max', sdf.f.max()
+  obs_cost = (sdf_at_obs**2).sum() * np.sqrt(pixel_area)
   print 'obs cost', obs_cost
   total += obs_cost
 
   return total
 
 
-SIZE = 500
+SIZE = 50
 WORLD_MIN = (-1, -1)
 WORLD_MAX = (1, 1)
 PIXEL_AREA = 4./SIZE/SIZE
 PIXEL_SIDE = 2./SIZE
 
 class Tracker(object):
-  def __init__(self, init_sdf):#T_pixel_world, init_sdf):
+  def __init__(self, init_sdf):
     self.sdf = init_sdf
     self.prev_sdf = init_sdf.copy()
-    #self.T_pixel_world = T_pixel_world
-    self.curr_u = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.zeros(self.sdf.f.shape[:2] + (2,))+[1,0])
+    self.curr_u = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.zeros(self.sdf.f.shape[:2] + (2,)))#+[1,0])
     self.curr_obs = None
 
   def observe(self, obs_n2):
@@ -158,11 +199,14 @@ class Tracker(object):
 
   def plot(self):
     # plot current sdf
+    curr_obs_inds = self.sdf.to_inds(self.curr_obs[:,0], self.curr_obs[:,1])
+    print 'obs inds', curr_obs_inds
+    print 'sdf\n', self.sdf.data()
+
     cmap = np.zeros((256, 3),dtype='uint8')
     cmap[:,0] = range(256)
     cmap[:,2] = range(256)[::-1]
     cmap[0] = [0,0,0]
-    print self.sdf.to_image_fmt().max()
     flatland.show_2d_image(cmap[np.fmin((self.sdf.to_image_fmt()*255).astype('int'), 255)], "sdf")
 
     # plot flow field
@@ -174,33 +218,45 @@ class Tracker(object):
   def optimize(self):
     self.prev_sdf = self.sdf
 
+    dim_sdf, dim_u = self.sdf.size, self.curr_u.size
+    def state_to_vec(sdf, u):
+      return np.concatenate((sdf.data().flatten(), u.data().flatten()))
+    def vec_to_state(vec):
+      sdf = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.f.shape))
+      u = BasicFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.f.shape))
+      return sdf, u
+
     import scipy.optimize
     self.i = 0
     def func(x):
-      sdf = x[:self.sdf.size].reshape(self.sdf.shape)
-      u = x[self.sdf.size:].reshape(self.curr_u.shape)
+      sdf, u = vec_to_state(x)
       cost = self.eval_cost(sdf, u)
       self.i += 1
       if self.i % 1000 == 0:
         self.plot()
         cv2.waitKey()
       return cost
-    x0 = np.r_[self.prev_sdf.flatten(), np.zeros_like(self.curr_u).flatten()]
-    result = scipy.optimize.fmin_cg(func, x0)
-    new_sdf = result[:self.sdf.size].reshape(self.sdf.shape)
-    new_u = result[self.sdf.size:].reshape(self.curr_u.shape)
+    x0 = state_to_vec(self.prev_sdf, self.curr_u) # zero u?
+    xopt = scipy.optimize.fmin_cg(func, x0)
+    new_sdf, new_u = vec_to_state(xopt)
 
     # print 'Results'
     # print new_sdf
     # print new_u
-
-    self.sdf = new_sdf
-    self.curr_u = new_u
+    self.sdf, self.curr_u = new_sdf, new_u
     return new_sdf, new_u
 
 def main():
-  #poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
-  poly = flatland.Polygon([[0, 0], [1,0]])#, [1,1], [1,0]])
+  import argparse
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--test', action='store_true')
+  args = parser.parse_args()
+
+  if args.test:
+    run_tests()
+
+  poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
+  #poly = flatland.Polygon([[0, 0], [1,0]])#, [1,1], [1,0]])
   polylist = [poly]
   cam_t = (0, -.5)
   r_angle = 0
@@ -221,12 +277,10 @@ def main():
     observed_XYs = cam1d.unproject(depth1d)
     filtered_obs_XYs = np.array([p for p in observed_XYs if np.isfinite(p).all()])
 
-    # initialization
-    if tracker is None:
-      pass
-
-    renderlist = polylist + [flatland.make_camera_poly(cam1d.t, cam1d.r_angle, fov)] + [flatland.Point(p, c) for (p, c) in zip(observed_XYs, depth1d_image) if np.isfinite(p).all()]
-    image2d = cam2d.render(renderlist)
+    obs_render_list = [flatland.Point(p, c) for (p, c) in zip(observed_XYs, depth1d_image) if np.isfinite(p).all()]
+    print 'obs world', filtered_obs_XYs
+    camera_poly_list = [flatland.make_camera_poly(cam1d.t, cam1d.r_angle, fov)]
+    image2d = cam2d.render(polylist + obs_render_list + camera_poly_list)
 
     flatland.show_1d_image([image1d, depth1d_image], "image1d+depth1d")
     flatland.show_2d_image(image2d)
@@ -247,31 +301,43 @@ def main():
         cam1d.t[0] -= .1
     elif key == ord('q'):
         break
+
+    elif key == ord('i'):
+      # initialization
+      # compute sdf of starting state as initialization
+      image2d = cam2d.render(polylist)
+      init_state_edge = np.ones((SIZE, SIZE), dtype=int)
+      is_edge = image2d[:,:,0] > .5
+      init_state_edge[is_edge] = 0
+      init_sdf_img = distance_transform_edt(init_state_edge) * PIXEL_SIDE
+      # negate inside the boundary
+      orig_filling = [p.filled for p in polylist]
+      for p in polylist: p.filled = True
+      image2d_filled = cam2d.render(polylist)
+      for orig, p in zip(orig_filling, polylist): p.filled = orig
+      init_sdf_img[image2d_filled[:,:,0] > .5] *= -1
+      init_sdf = BasicFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
+
+      tracker = Tracker(init_sdf)
+      tracker.observe(filtered_obs_XYs)
+      tracker.plot()
+      cv2.waitKey()
+
+    elif key == ord('o'):
+      obs = filtered_obs_XYs
+      tracker.observe(obs)
+      print 'observed.'
+
     elif key == ord('p'):
 
-        # compute sdf of starting state as initialization
-        image2d = cam2d.render(polylist)
-        init_state_edge = np.ones((SIZE, SIZE), dtype=int)
-        is_edge = image2d[:,:,0] > .5
-        init_state_edge[is_edge] = 0
-        init_sdf_img = distance_transform_edt(init_state_edge) * PIXEL_SIDE
-        # negate inside the boundary
-        orig_filling = [p.filled for p in polylist]
-        for p in polylist: p.filled = True
-        image2d_filled = cam2d.render(polylist)
-        for orig, p in zip(orig_filling, polylist): p.filled = orig
-        init_sdf_img[image2d_filled[:,:,0] > .5] *= -1
 
-        init_sdf = BasicFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
 
         #T_pixel_world = flatland.Render2d(cam2d.bl, cam2d.tr, cam2d.width).P
         #T_pixel_world[:2,2] += .5
         #print 'T_pixel_world', T_pixel_world
         #tracker = Tracker(T_pixel_world, init_sdf)
-        tracker = Tracker(init_sdf)
         # obs = np.fliplr((filtered_obs_XYs.dot(P[:2,:2].T) + P[:2,2][None,:]).astype(int))
-        obs = filtered_obs_XYs
-        tracker.observe(obs)
+
         for i in range(10000):
           #new_sdf, new_u = tracker.optimize()
           tracker.plot()
