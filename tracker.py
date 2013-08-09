@@ -41,6 +41,10 @@ class SpatialFunction(object):
         jac_f[:,:,d,1] *= (self._f.shape[1] - 1.)/(self.ymax - self.ymin)
       self._df = SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, jac_f)
 
+  @classmethod
+  def InitLike(cls, other, f, precompute_jacs=False):
+    return cls(other.xmin, other.xmax, other.ymin, other.ymax, f, precompute_jacs=precompute_jacs)
+
   def _to_inds(self, xs, ys):
     assert len(xs) == len(ys)
     ixs = (xs - self.xmin)*(self._f.shape[0] - 1.)/(self.xmax - self.xmin)
@@ -88,16 +92,19 @@ class SpatialFunction(object):
   def shape(self): return self.data().shape
 
   @classmethod
-  def FromImage(cls, xmin, xmax, ymin, ymax, img):
+  def FromImage(cls, xmin, xmax, ymin, ymax, img, precompute_jacs=False):
     f = np.fliplr(np.flipud(img.T))
-    return cls(xmin, xmax, ymin, ymax, f)
+    return cls(xmin, xmax, ymin, ymax, f, precompute_jacs=precompute_jacs)
 
   def to_image_fmt(self):
     assert self.output_dim == (1,)
     return np.flipud(np.fliplr(np.squeeze(self._f))).T
 
   def copy(self):
-    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, self._f.copy())
+    out = SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, self._f.copy())
+    if self._df is not None:
+      out._df = self._df.copy()
+    return out
 
   def flow(self, u):
     assert (u.xmin, u.xmax, u.ymin, u.ymax) == (self.xmin, self.xmax, self.ymin, self.ymax)
@@ -108,7 +115,7 @@ class SpatialFunction(object):
     xy_grid -= u._f
 
     new_f = self.eval_xys(xy_grid.reshape((-1,2))).reshape(self._f.shape)
-    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
+    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f, precompute_jacs=self._df is not None)
 
 
   def show_as_vector_field(self, windowname):
@@ -231,12 +238,18 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   costs['flow'] = flow_cost
   total += flow_cost
 
-  # sdf and flow agree
-  shifted_sdf = prev_sdf.flow(u)
-  agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
-  # print 'agree', agree_cost
+  # # sdf and flow agree
+  # shifted_sdf = prev_sdf.flow(u)
+  # agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
+  # # print 'agree', agree_cost
+  # costs['agree'] = agree_cost
+  # total += agree_cost
+
+  #sdf_diff = SpatialFunction.InitLike(sdf, sdf.data() - prev_sdf.data(), precompute_jacs=True)
+  agree_cost = (((np.squeeze(sdf._df.data()) * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum() * pixel_area
   costs['agree'] = agree_cost
   total += agree_cost
+
 
   # sdf is zero at observation points
   if not ignore_obs:
@@ -302,7 +315,7 @@ class Tracker(object):
     flatland.show_2d_image(cmap[np.fmin((np.clip(self.sdf.to_image_fmt(), 0, np.inf)*255).astype('int'), 255)], "sdf")
 
     # plot flow field
-    print 'curr flow\n', self.curr_u.data()
+    # print 'curr flow\n', self.curr_u.data()
     self.curr_u.show_as_vector_field("u")
 
     total, costs = _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, self.sdf, self.curr_u, ignore_obs=self.curr_obs is None, return_full=True)
@@ -316,8 +329,8 @@ class Tracker(object):
     def state_to_vec(sdf, u):
       return np.concatenate((sdf.data().flatten(), u.data().flatten()))
     def vec_to_state(vec):
-      sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()))
-      u = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.shape()))
+      sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()), precompute_jacs=self.sdf._df is not None)
+      u = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.shape()), precompute_jacs=self.sdf._df is not None)
       return sdf, u
 
     tmp_sdf, tmp_u = vec_to_state(state_to_vec(self.sdf, self.curr_u))
@@ -373,7 +386,7 @@ def main():
   cam1d = flatland.Camera1d(cam_t, r_angle, fov, SIZE)
   cam2d = flatland.Camera2d(WORLD_MIN, WORLD_MAX, SIZE)
 
-  empty_sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.ones((SIZE, SIZE)))
+  empty_sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.ones((SIZE, SIZE)), precompute_jacs=True)
   tracker = Tracker(empty_sdf)
 
   while True:
@@ -435,7 +448,7 @@ def main():
       image2d_filled = cam2d.render(polylist)
       for orig, p in zip(orig_filling, polylist): p.filled = orig
       init_sdf_img[image2d_filled[:,:,0] > .5] *= -1
-      init_sdf = SpatialFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
+      init_sdf = SpatialFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img, precompute_jacs=True)
 
       tracker = Tracker(init_sdf)
       tracker.observe(filtered_obs_XYs)
