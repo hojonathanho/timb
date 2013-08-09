@@ -15,35 +15,47 @@ def show_vector_field(origins, field_mn2, windowname):
 
 def grid_interp(grid, u):
   ''' bilinear interpolation '''
-  assert u.shape[-1] == grid.ndim and u.ndim == 2
+  assert u.shape[-1] == 2 and u.ndim == 2
+  grid = np.atleast_3d(grid)
   ax, ay = np.floor(u[:,0]).astype(int), np.floor(u[:,1]).astype(int)
   bx, by = ax + 1, ay + 1
   ax, bx, ay, by = np.clip(ax, 0, grid.shape[0]-1), np.clip(bx, 0, grid.shape[0]-1), np.clip(ay, 0, grid.shape[1]-1), np.clip(by, 0, grid.shape[1]-1)
-  dx = u[:,0] - ax
-  dy = u[:,1] - ay
+
+  # introduce axes into dx, dy to broadcast over all dimensions of output
+  idx = tuple([slice(None)] + [None]*(grid.ndim - 2))
+  dx, dy = np.maximum(u[:,0] - ax, 0)[idx], np.maximum(u[:,1] - ay, 0)[idx]
+
   out = (1.-dy)*((1.-dx)*grid[ax,ay] + dx*grid[bx,ay]) + dy*((1.-dx)*grid[ax,by] + dx*grid[bx,by])
+
   assert len(out) == len(u)
   return out
 
 class SpatialFunction(object):
-  def __init__(self, xmin, xmax, ymin, ymax, f):
+  def __init__(self, xmin, xmax, ymin, ymax, f, precompute_jacs=False):
     # coordinate mapping: (xmin, ymin) -> (0, 0), (xmax, ymax) -> (f.shape[0]-1, f.shape[1]-1)
     self.xmin, self.xmax = xmin, xmax
     self.ymin, self.ymax = ymin, ymax
     self._f = np.atleast_3d(f)
-    self.output_dim = self._f.shape[2]
+    self.output_dim = self._f.shape[2:]
+
+    self._df = None
+    if precompute_jacs:
+      assert len(self.output_dim) == 1
+      jac_f = np.empty(self._f.shape + (2,))
+      for d in range(self.output_dim[0]):
+        jac_f[:,:,d,:] = np.dstack(np.gradient(self._f[:,:,d]))
+        jac_f[:,:,d,0] *= (self._f.shape[0] - 1.)/(self.xmax - self.xmin)
+        jac_f[:,:,d,1] *= (self._f.shape[1] - 1.)/(self.ymax - self.ymin)
+      self._df = SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, jac_f)
 
   def _to_inds(self, xs, ys):
-    assert len(xs) == len(ys)# and (xs >= self.xmin).all() and (xs <= self.xmax).all() and (ys >= self.ymin).all() and (ys <= self.ymax).all()
+    assert len(xs) == len(ys)
     ixs = (xs - self.xmin)*(self._f.shape[0] - 1.)/(self.xmax - self.xmin)
     iys = (ys - self.ymin)*(self._f.shape[1] - 1.)/(self.ymax - self.ymin)
     return ixs, iys
 
   def _eval_inds(self, inds):
-    out = np.empty((len(inds), self.output_dim))
-    for d in range(self.output_dim):
-      out[:,d] = grid_interp(self._f[:,:,d], inds)
-    return np.squeeze(out)
+    return np.squeeze(grid_interp(self._f, inds))
 
   def eval_xys(self, xys):
     assert xys.shape[1] == 2
@@ -55,10 +67,28 @@ class SpatialFunction(object):
 
   def num_jac(self, xs, ys, eps=1e-5):
     '''numerical jacobian'''
-    jacs = np.empty((len(xs), self.output_dim, 2))
-    jacs[:,:,0] = (self.eval(xs+eps, ys) - self.eval(xs-eps, ys)) / (2.*eps)
-    jacs[:,:,1] = (self.eval(xs, ys+eps) - self.eval(xs, ys-eps)) / (2.*eps)
+    assert len(self.output_dim) == 1
+    num_pts = len(xs); assert len(ys) == num_pts
+    eps_x = np.empty(num_pts); eps_x.fill(2.*eps)
+    eps_y = np.empty(num_pts); eps_y.fill(2.*eps)
+    one_sided_mask_x = (xs-eps < self.xmin) | (xs+eps > self.xmax)
+    one_sided_mask_y = (ys-eps < self.ymin) | (ys+eps > self.ymax)
+    eps_x[one_sided_mask_x] = eps
+    eps_y[one_sided_mask_y] = eps
+
+    # introduce axes into eps_x, eps_y to broadcast over all dimensions of output
+    idx = tuple([slice(None)] + [None]*(self._f.ndim - 2))
+    eps_x, eps_y = eps_x[idx], eps_y[idx]
+
+    jacs = np.empty([num_pts] + list(self.output_dim) + [2])
+    jacs[:,:,0] = (self.eval(xs+eps, ys) - self.eval(xs-eps, ys)) / eps_x
+    jacs[:,:,1] = (self.eval(xs, ys+eps) - self.eval(xs, ys-eps)) / eps_y
     return jacs
+
+  def fast_num_jac(self, xs, ys):
+    '''numerical jacobian, precalculated'''
+    assert self._df is not None
+    return self._df.eval(xs, ys)
 
   def data(self): return np.squeeze(self._f)
   def size(self): return self._f.size
@@ -70,7 +100,7 @@ class SpatialFunction(object):
     return cls(xmin, xmax, ymin, ymax, f)
 
   def to_image_fmt(self):
-    assert self.output_dim == 1
+    assert self.output_dim == (1,)
     return np.flipud(np.fliplr(np.squeeze(self._f))).T
 
   def copy(self):
@@ -80,12 +110,13 @@ class SpatialFunction(object):
     assert (u.xmin, u.xmax, u.ymin, u.ymax) == (self.xmin, self.xmax, self.ymin, self.ymax)
     assert u._f.shape[:2] == self._f.shape[:2] and u._f.shape[2] == 2
 
-    grid = np.transpose(np.meshgrid(np.linspace(self.xmin, self.xmax, self._f.shape[0]), np.linspace(self.ymin, self.ymax, self._f.shape[1])))
-    assert u._f.shape == grid.shape
-    grid -= u._f
+    xy_grid = np.transpose(np.meshgrid(np.linspace(self.xmin, self.xmax, self._f.shape[0]), np.linspace(self.ymin, self.ymax, self._f.shape[1])))
+    assert u._f.shape == xy_grid.shape
+    xy_grid -= u._f
 
-    new_f = self.eval_xys(grid.reshape((-1,2))).reshape(self._f.shape)
+    new_f = self.eval_xys(xy_grid.reshape((-1,2))).reshape(self._f.shape)
     return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
+
 
 def run_tests():
   import unittest
@@ -93,15 +124,22 @@ def run_tests():
 
     def test_grid_interp(self):
       n, m = 5, 4
-      grid = np.random.rand(n, m)
+      data = np.random.rand(n, m)
       u = np.transpose(np.meshgrid(np.linspace(0, n-1, n), np.linspace(0, m-1, m)))
-      g2 = grid_interp(grid, u.reshape((-1, 2))).reshape((n, m))
-      self.assertTrue(np.allclose(grid, g2))
-
+      g2 = grid_interp(data, u.reshape((-1, 2))).reshape((n, m))
+      self.assertTrue(np.allclose(data, g2))
       for j in range(1,m):
-        g3 = grid_interp(grid, (u + [0,j]).reshape((-1, 2))).reshape((n, m))
-        self.assertTrue(np.allclose(grid[:,j:], g3[:,:-j]))
-        self.assertTrue(np.allclose(g3[:,-1], grid[:,-1]))
+        g3 = grid_interp(data, (u + [0,j]).reshape((-1, 2))).reshape((n, m))
+        self.assertTrue(np.allclose(data[:,j:], g3[:,:-j]))
+        self.assertTrue(np.allclose(g3[:,-1], data[:,-1]))
+
+      vector_data = np.random.rand(n, m, 3)
+      g4 = grid_interp(vector_data, u.reshape((-1, 2))).reshape((n, m, 3))
+      self.assertTrue(np.allclose(vector_data, g4))
+
+      matrix_data = np.random.rand(n, m, 2, 3)
+      g5 = grid_interp(matrix_data, u.reshape((-1, 2))).reshape((n, m, 2, 3))
+      self.assertTrue(np.allclose(matrix_data, g5))
 
     def test_func_eval(self):
       data = np.random.rand(4, 5)
@@ -126,20 +164,20 @@ def run_tests():
       self.assertTrue(np.allclose(f3.data()[0,:], data[0,:]))
 
     def test_num_jac(self):
-      num_pts = 8
       ndim = 3
-      data = np.random.rand(4, 5, ndim)
-      xs, ys = np.random.rand(num_pts), np.random.rand(num_pts)
-      f = SpatialFunction(-1, 1, 6, 8, data)
+      n, m = 100, 200
+      xmin, xmax, ymin, ymax = -1, 1, 6, 8
+      def rosen(x):
+        """The Rosenbrock function"""
+        return 100.0*((x[:,1:]-x[:,:-1]**2.0)**2.0 + (1-x[:,:-1])**2.0).sum(axis=1)
+      u = np.transpose(np.meshgrid(np.linspace(xmin, xmax, n), np.linspace(ymin, ymax, m))).reshape((-1,2))
+      xs, ys = u[:,0], u[:,1]
+      data = rosen(u).reshape((n, m)); data = np.dstack((data,)*ndim)
+
+      f = SpatialFunction(xmin, xmax, ymin, ymax, data, precompute_jacs=True)
       jacs = f.num_jac(xs, ys)
-      for i in range(num_pts):
-        self.assertTrue(np.allclose(jacs[i,:,:], f.num_jac(xs[i][None], ys[i][None])))
-
-      #import IPython; IPython.embed()
-      S = np.empty((4, 5, ndim, 2))
-      for d in range(ndim):
-        S[:,:,d,:] = np.dstack(np.gradient(f.data()[:,:,d]))
-
+      jacs2 = f.fast_num_jac(xs, ys)
+      self.assertTrue(np.allclose(jacs, jacs2))
 
 
   suite = unittest.TestLoader().loadTestsFromTestCase(Tests)
