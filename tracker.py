@@ -33,28 +33,32 @@ class SpatialFunction(object):
     self._f = np.atleast_3d(f)
     self.output_dim = self._f.shape[2]
 
-  def to_inds(self, xs, ys):
+  def _to_inds(self, xs, ys):
     assert len(xs) == len(ys)# and (xs >= self.xmin).all() and (xs <= self.xmax).all() and (ys >= self.ymin).all() and (ys <= self.ymax).all()
     ixs = (xs - self.xmin)*(self._f.shape[0] - 1.)/(self.xmax - self.xmin)
     iys = (ys - self.ymin)*(self._f.shape[1] - 1.)/(self.ymax - self.ymin)
     return ixs, iys
+
+  def _eval_inds(self, inds):
+    out = np.empty((len(inds), self.output_dim))
+    for d in range(self.output_dim):
+      out[:,d] = grid_interp(self._f[:,:,d], inds)
+    return np.squeeze(out)
 
   def eval_xys(self, xys):
     assert xys.shape[1] == 2
     return self.eval(xys[:,0], xys[:,1])
 
   def eval(self, xs, ys):
-    ixs, iys = self.to_inds(xs, ys)
-    float_inds = np.c_[ixs, iys]
-    out = np.empty((len(xs), self.output_dim))
-    for d in range(self.output_dim):
-      out[:,d] = grid_interp(self._f[:,:,d], float_inds)
-    return np.squeeze(out)
+    ixs, iys = self._to_inds(xs, ys)
+    return self._eval_inds(np.c_[ixs, iys])
 
-  # def num_jac(self, xs, ys, eps=1e-5):
-  #   '''numerical jacobian'''
-  #   g_x = (self.eval(xs+eps, ys) - self.eval(xs-eps, ys)) / (2.*eps)
-  #   g_y = (self.eval(xs, ys+eps) - self.eval(xs, ys-eps)) / (2.*eps)
+  def num_jac(self, xs, ys, eps=1e-5):
+    '''numerical jacobian'''
+    jacs = np.empty((len(xs), self.output_dim, 2))
+    jacs[:,:,0] = (self.eval(xs+eps, ys) - self.eval(xs-eps, ys)) / (2.*eps)
+    jacs[:,:,1] = (self.eval(xs, ys+eps) - self.eval(xs, ys-eps)) / (2.*eps)
+    return jacs
 
   def data(self): return np.squeeze(self._f)
   def size(self): return self._f.size
@@ -66,6 +70,7 @@ class SpatialFunction(object):
     return cls(xmin, xmax, ymin, ymax, f)
 
   def to_image_fmt(self):
+    assert self.output_dim == 1
     return np.flipud(np.fliplr(np.squeeze(self._f))).T
 
   def copy(self):
@@ -120,6 +125,22 @@ def run_tests():
       self.assertTrue(np.allclose(f3.data()[1:,:], data[:-1,:]))
       self.assertTrue(np.allclose(f3.data()[0,:], data[0,:]))
 
+    def test_num_jac(self):
+      num_pts = 8
+      ndim = 3
+      data = np.random.rand(4, 5, ndim)
+      xs, ys = np.random.rand(num_pts), np.random.rand(num_pts)
+      f = SpatialFunction(-1, 1, 6, 8, data)
+      jacs = f.num_jac(xs, ys)
+      for i in range(num_pts):
+        self.assertTrue(np.allclose(jacs[i,:,:], f.num_jac(xs[i][None], ys[i][None])))
+
+      #import IPython; IPython.embed()
+      S = np.empty((4, 5, ndim, 2))
+      for d in range(ndim):
+        S[:,:,d,:] = np.dstack(np.gradient(f.data()[:,:,d]))
+
+
 
   suite = unittest.TestLoader().loadTestsFromTestCase(Tests)
   unittest.TextTestRunner(verbosity=2).run(suite)
@@ -138,10 +159,10 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   total += flow_cost
 
   # sdf and flow agree
-  shifted_sdf = prev_sdf.flow(u)
-  agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
-  # print 'agree', agree_cost
-  total += agree_cost
+  # shifted_sdf = prev_sdf.flow(u)
+  # agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
+  # # print 'agree', agree_cost
+  # total += agree_cost
 
   # sdf is zero at observation points
   if not ignore_obs:
@@ -246,12 +267,14 @@ class Tracker(object):
     xopt = scipy.optimize.fmin_cg(func, x0, epsilon=1e-5, disp=True, maxiter=20)
     new_sdf, new_u = vec_to_state(xopt)
 
-    # print 'Results'
+    print 'Done optimizing.'
     # print new_sdf
     # print new_u
     print 'final costs:', self.eval_cost(new_sdf, new_u, return_full=True)
     print 'new sdf\n', new_sdf.data()
     self.sdf, self.curr_u = new_sdf, new_u
+
+
     print 'Num evals:', self.i
     return new_sdf, new_u
 
