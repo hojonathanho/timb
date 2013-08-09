@@ -6,13 +6,6 @@ from scipy.ndimage.morphology import distance_transform_edt
 import scipy.optimize
 np.set_printoptions(linewidth=10000)
 
-def show_vector_field(origins, field_mn2, windowname):
-  size = 10
-  center_inds = np.dstack(np.meshgrid(np.arange(0, field_mn2.shape[0], size), np.arange(0, field_mn2.shape[1], size))).reshape((-1, 2))
-  img = np.zeros((field_mn2.shape[0], field_mn2.shape[1], 3))
-  img[center_inds[0],center_inds[1],:] = (1., 1., 1.)
-  flatland.show_2d_image(img, windowname)
-
 def grid_interp(grid, u):
   ''' bilinear interpolation '''
   assert u.shape[-1] == 2 and u.ndim == 2
@@ -118,6 +111,31 @@ class SpatialFunction(object):
     return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
 
 
+  def show_as_vector_field(self, windowname):
+    assert self.output_dim == (2,)
+
+    img_size = (500, 500)
+    arrow_res = 10
+    nx, ny = int(img_size[0]/arrow_res), int(img_size[1]/arrow_res)
+    def to_img_inds(xys):
+      xs, ys = xys[:,0], xys[:,1]
+      ixs = (xs - self.xmin)*(img_size[0] - 1.)/(self.xmax - self.xmin)
+      iys = (ys - self.ymin)*(img_size[1] - 1.)/(self.ymax - self.ymin)
+      return np.c_[ixs.astype(int), iys.astype(int)]
+
+    vec_starts = np.transpose(np.meshgrid(np.linspace(self.xmin, self.xmax, nx), np.linspace(self.ymin, self.ymax, ny)))
+    vec_dirs = self.eval_xys(vec_starts.reshape((-1,2))).reshape((nx, ny, 2))
+    vec_ends = vec_starts + vec_dirs
+
+    #import IPython; IPython.embed()
+
+    img = np.zeros(img_size + (3,))
+    for start, end in zip(to_img_inds(vec_starts.reshape((-1,2))), to_img_inds(vec_ends.reshape((-1,2)))):
+      #print start, end
+      cv2.line(img, tuple(start), tuple(end), (1.,1.,1))
+    flatland.show_2d_image(np.flipud(np.fliplr(img)), windowname)
+
+
 def run_tests():
   import unittest
   class Tests(unittest.TestCase):
@@ -164,20 +182,37 @@ def run_tests():
       self.assertTrue(np.allclose(f3.data()[0,:], data[0,:]))
 
     def test_num_jac(self):
-      ndim = 3
-      n, m = 100, 200
-      xmin, xmax, ymin, ymax = -1, 1, 6, 8
+
       def rosen(x):
         """The Rosenbrock function"""
-        return 100.0*((x[:,1:]-x[:,:-1]**2.0)**2.0 + (1-x[:,:-1])**2.0).sum(axis=1)
+        return (100.0*(x[:,1:]-x[:,:-1]**2.0)**2.0 + (1-x[:,:-1])**2.0).sum(axis=1)
+      def rosen_der(x):
+        xm = x[:,1:-1]
+        xm_m1 = x[:,:-2]
+        xm_p1 = x[:,2:]
+        der = np.zeros_like(x)
+        der[:,1:-1] = 200*(xm-xm_m1**2) - 400*(xm_p1 - xm**2)*xm - 2*(1-xm)
+        der[:,0] = -400*x[:,0]*(x[:,1]-x[:,0]**2) - 2*(1-x[:,0])
+        der[:,-1] = 200*(x[:,-1]-x[:,-2]**2)
+        return der
+
+      ndim = 3
+      n, m = 50, 60
+      xmin, xmax, ymin, ymax = -1, 1, 6, 8
       u = np.transpose(np.meshgrid(np.linspace(xmin, xmax, n), np.linspace(ymin, ymax, m))).reshape((-1,2))
       xs, ys = u[:,0], u[:,1]
-      data = rosen(u).reshape((n, m)); data = np.dstack((data,)*ndim)
+      data = rosen(u).reshape((n, m)); data = np.dstack([(k+1.)*data for k in range(ndim)])
 
       f = SpatialFunction(xmin, xmax, ymin, ymax, data, precompute_jacs=True)
       jacs = f.num_jac(xs, ys)
       jacs2 = f.fast_num_jac(xs, ys)
       self.assertTrue(np.allclose(jacs, jacs2))
+
+      true_jac_base = rosen_der(u)
+      true_jacs = np.empty_like(jacs)
+      for k in range(ndim):
+        true_jacs[:,k,:] = (k+1.)*true_jac_base
+      self.assertTrue(np.absolute(true_jacs - jacs).max()/true_jacs.ptp() < .01)
 
 
   suite = unittest.TestLoader().loadTestsFromTestCase(Tests)
@@ -197,10 +232,11 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   total += flow_cost
 
   # sdf and flow agree
-  # shifted_sdf = prev_sdf.flow(u)
-  # agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
-  # # print 'agree', agree_cost
-  # total += agree_cost
+  shifted_sdf = prev_sdf.flow(u)
+  agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
+  # print 'agree', agree_cost
+  costs['agree'] = agree_cost
+  total += agree_cost
 
   # sdf is zero at observation points
   if not ignore_obs:
@@ -266,7 +302,8 @@ class Tracker(object):
     flatland.show_2d_image(cmap[np.fmin((np.clip(self.sdf.to_image_fmt(), 0, np.inf)*255).astype('int'), 255)], "sdf")
 
     # plot flow field
-    #show_vector_field(self.curr_u, "u")
+    print 'curr flow\n', self.curr_u.data()
+    self.curr_u.show_as_vector_field("u")
 
     total, costs = _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, self.sdf, self.curr_u, ignore_obs=self.curr_obs is None, return_full=True)
     print 'total cost', total
@@ -297,7 +334,9 @@ class Tracker(object):
       #   self.plot()
       #   cv2.waitKey()
       return cost
-    x0 = state_to_vec(self.prev_sdf, self.curr_u) # zero u?
+
+    zero_u = self.curr_u.copy(); zero_u.data().fill(0)
+    x0 = state_to_vec(self.prev_sdf, zero_u) # zero u?
 
     print 'initial costs:', self.eval_cost(self.prev_sdf, self.curr_u, return_full=True)
     print 'old sdf\n', self.prev_sdf.data()
