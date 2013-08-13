@@ -10,6 +10,7 @@ def grid_interp(grid, u):
   ''' bilinear interpolation '''
   assert u.shape[-1] == 2 and u.ndim == 2
   grid = np.atleast_3d(grid)
+
   ax, ay = np.floor(u[:,0]).astype(int), np.floor(u[:,1]).astype(int)
   bx, by = ax + 1, ay + 1
   ax, bx, ay, by = np.clip(ax, 0, grid.shape[0]-1), np.clip(bx, 0, grid.shape[0]-1), np.clip(ay, 0, grid.shape[1]-1), np.clip(by, 0, grid.shape[1]-1)
@@ -23,8 +24,51 @@ def grid_interp(grid, u):
   assert len(out) == len(u)
   return out
 
+def grid_interp_grad_nd(grid, u, eps=1e-5):
+  grid = np.atleast_3d(grid)
+  assert grid.ndim == 3 and grid.shape[2] == 1
+  grid = np.squeeze(grid)
+
+  grads = np.empty((len(u),) + grid.shape)
+  for i in range(grid.shape[0]):
+    for j in range(grid.shape[1]):
+      orig = grid[i,j]
+      grid[i,j] = orig + eps
+      y2 = grid_interp(grid, u)
+      grid[i,j] = orig - eps
+      y1 = grid_interp(grid, u)
+      grid[i,j] = orig
+      grads[:,i,j] = np.squeeze(y2 - y1) / (2.*eps)
+  return grads
+
+def grid_interp_grad(grid, u):
+  '''gradients of interpolated points with respect to the grid'''
+  grid = np.atleast_3d(grid)
+  assert grid.ndim == 3 and grid.shape[2] == 1
+  grid = np.squeeze(grid)
+
+  ax, ay = np.floor(u[:,0]).astype(int), np.floor(u[:,1]).astype(int)
+  bx, by = ax + 1, ay + 1
+
+  in_range_axay = (ax >= 0) & (ax < grid.shape[0]) & (ay >= 0) & (ay < grid.shape[1])
+  in_range_axby = (ax >= 0) & (ax < grid.shape[0]) & (by >= 0) & (by < grid.shape[1])
+  in_range_bxay = (bx >= 0) & (bx < grid.shape[0]) & (ay >= 0) & (ay < grid.shape[1])
+  in_range_bxby = (bx >= 0) & (bx < grid.shape[0]) & (by >= 0) & (by < grid.shape[1])
+
+  dx, dy = np.maximum(u[:,0] - ax, 0), np.maximum(u[:,1] - ay, 0)
+
+  grads = np.zeros((len(u),) + grid.shape)
+  grads[in_range_axay,ax[in_range_axay],ay[in_range_axay]] = ((1.-dy)*(1.-dx))[in_range_axay]
+  grads[in_range_bxay,bx[in_range_bxay],ay[in_range_bxay]] = ((1.-dy)*dx)[in_range_bxay]
+  grads[in_range_axby,ax[in_range_axby],by[in_range_axby]] = (dy*(1.-dx))[in_range_axby]
+  grads[in_range_bxby,bx[in_range_bxby],by[in_range_bxby]] = (dy*dx)[in_range_bxby]
+
+  return grads
+
+
+
 class SpatialFunction(object):
-  def __init__(self, xmin, xmax, ymin, ymax, f, precompute_jacs=False):
+  def __init__(self, xmin, xmax, ymin, ymax, f):
     # coordinate mapping: (xmin, ymin) -> (0, 0), (xmax, ymax) -> (f.shape[0]-1, f.shape[1]-1)
     self.xmin, self.xmax = xmin, xmax
     self.ymin, self.ymax = ymin, ymax
@@ -32,20 +76,33 @@ class SpatialFunction(object):
     self.output_dim = self._f.shape[2:]
 
     self._df = None
-    if precompute_jacs:
-      assert len(self.output_dim) == 1
-      jac_f = np.empty(self._f.shape + (2,))
-      for d in range(self.output_dim[0]):
-        jac_f[:,:,d,:] = np.dstack(np.gradient(self._f[:,:,d]))
-        jac_f[:,:,d,0] *= (self._f.shape[0] - 1.)/(self.xmax - self.xmin)
-        jac_f[:,:,d,1] *= (self._f.shape[1] - 1.)/(self.ymax - self.ymin)
-      self._df = SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, jac_f)
 
   @classmethod
-  def InitLike(cls, other, f, precompute_jacs=False):
-    return cls(other.xmin, other.xmax, other.ymin, other.ymax, f, precompute_jacs=precompute_jacs)
+  def InitLike(cls, other, new_f):
+    return cls(other.xmin, other.xmax, other.ymin, other.ymax, new_f)
 
-  def _to_inds(self, xs, ys):
+  def _precompute_jacs(self):
+    # if len(self.output_dim) != 1:
+    #   return
+
+    import itertools
+
+    jac_f = np.empty(self._f.shape + (2,))
+    for inds in itertools.product(*[range(d) for d in self.output_dim]):
+    #for d in range(self.output_dim[0]):
+
+      s = (slice(None), slice(None)) + inds
+
+      jac_f[s + (slice(None),)] = np.dstack(np.gradient(self._f[s]))
+      jac_f[s + (0,)] *= (self._f.shape[0] - 1.)/(self.xmax - self.xmin)
+      jac_f[s + (1,)] *= (self._f.shape[1] - 1.)/(self.ymax - self.ymin)
+
+      # jac_f[:,:,d,:] = np.dstack(np.gradient(self._f[:,:,d]))
+      # jac_f[:,:,d,0] *= (self._f.shape[0] - 1.)/(self.xmax - self.xmin)
+      # jac_f[:,:,d,1] *= (self._f.shape[1] - 1.)/(self.ymax - self.ymin)
+    self._df = SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, jac_f)
+
+  def to_grid_inds(self, xs, ys):
     assert len(xs) == len(ys)
     ixs = (xs - self.xmin)*(self._f.shape[0] - 1.)/(self.xmax - self.xmin)
     iys = (ys - self.ymin)*(self._f.shape[1] - 1.)/(self.ymax - self.ymin)
@@ -59,12 +116,12 @@ class SpatialFunction(object):
     return self.eval(xys[:,0], xys[:,1])
 
   def eval(self, xs, ys):
-    ixs, iys = self._to_inds(xs, ys)
+    ixs, iys = self.to_grid_inds(xs, ys)
     return self._eval_inds(np.c_[ixs, iys])
 
-  def num_jac(self, xs, ys, eps=1e-5):
-    '''numerical jacobian'''
-    assert len(self.output_dim) == 1
+  def num_jac_direct(self, xs, ys, eps=1e-5):
+    '''numerical jacobian, not using precomputed data'''
+    #assert len(self.output_dim) == 1
     num_pts = len(xs); assert len(ys) == num_pts
     eps_x = np.empty(num_pts); eps_x.fill(2.*eps)
     eps_y = np.empty(num_pts); eps_y.fill(2.*eps)
@@ -80,21 +137,29 @@ class SpatialFunction(object):
     jacs = np.empty([num_pts] + list(self.output_dim) + [2])
     jacs[:,:,0] = (self.eval(xs+eps, ys) - self.eval(xs-eps, ys)) / eps_x
     jacs[:,:,1] = (self.eval(xs, ys+eps) - self.eval(xs, ys-eps)) / eps_y
-    return jacs
+    return np.squeeze(jacs)
 
-  def fast_num_jac(self, xs, ys):
+  def num_jac(self, xs, ys):
     '''numerical jacobian, precalculated'''
-    assert self._df is not None
+    if self._df is None: self._precompute_jacs()
     return self._df.eval(xs, ys)
+
+  def jac_data(self):
+    if self._df is None: self._precompute_jacs()
+    return self._df.data()
+
+  def jac_func(self):
+    if self._df is None: self._precompute_jacs()
+    return self._df
 
   def data(self): return np.squeeze(self._f)
   def size(self): return self._f.size
   def shape(self): return self.data().shape
 
   @classmethod
-  def FromImage(cls, xmin, xmax, ymin, ymax, img, precompute_jacs=False):
+  def FromImage(cls, xmin, xmax, ymin, ymax, img):
     f = np.fliplr(np.flipud(img.T))
-    return cls(xmin, xmax, ymin, ymax, f, precompute_jacs=precompute_jacs)
+    return cls(xmin, xmax, ymin, ymax, f)
 
   def to_image_fmt(self):
     assert self.output_dim == (1,)
@@ -102,8 +167,8 @@ class SpatialFunction(object):
 
   def copy(self):
     out = SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, self._f.copy())
-    if self._df is not None:
-      out._df = self._df.copy()
+    # if self._df is not None:
+    #   out._df = self._df.copy()
     return out
 
   def flow(self, u):
@@ -115,7 +180,7 @@ class SpatialFunction(object):
     xy_grid -= u._f
 
     new_f = self.eval_xys(xy_grid.reshape((-1,2))).reshape(self._f.shape)
-    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f, precompute_jacs=self._df is not None)
+    return SpatialFunction(self.xmin, self.xmax, self.ymin, self.ymax, new_f)
 
 
   def show_as_vector_field(self, windowname):
@@ -134,11 +199,8 @@ class SpatialFunction(object):
     vec_dirs = self.eval_xys(vec_starts.reshape((-1,2))).reshape((nx, ny, 2))
     vec_ends = vec_starts + vec_dirs
 
-    #import IPython; IPython.embed()
-
     img = np.zeros(img_size + (3,))
     for start, end in zip(to_img_inds(vec_starts.reshape((-1,2))), to_img_inds(vec_ends.reshape((-1,2)))):
-      #print start, end
       cv2.line(img, tuple(start), tuple(end), (1.,1.,1))
     flatland.show_2d_image(np.flipud(np.fliplr(img)), windowname)
 
@@ -166,6 +228,20 @@ def run_tests():
       g5 = grid_interp(matrix_data, u.reshape((-1, 2))).reshape((n, m, 2, 3))
       self.assertTrue(np.allclose(matrix_data, g5))
 
+    def test_grid_interp_grad(self):
+      n, m = 10, 15
+      data = np.random.rand(n, m)
+      u = np.transpose(np.meshgrid(np.linspace(0, n-1, n), np.linspace(0, m-1, m))).reshape((-1,2))
+      g1 = grid_interp_grad_nd(data, u)
+      g2 = grid_interp_grad(data, u)
+      self.assertTrue(np.allclose(g1, g2))
+
+      u2 = np.random.rand(30, 2)
+      u2[:,0] *= n-1; u[:,1] *= m-1
+      g3 = grid_interp_grad_nd(data, u2)
+      g4 = grid_interp_grad(data, u2)
+      self.assertTrue(np.allclose(g3, g4))
+
     def test_func_eval(self):
       data = np.random.rand(4, 5)
       f = SpatialFunction(-1, 1,  6, 7, data)
@@ -189,9 +265,8 @@ def run_tests():
       self.assertTrue(np.allclose(f3.data()[0,:], data[0,:]))
 
     def test_num_jac(self):
-
+      '''test jacobians on a function f(x) = [g_1(x), g_2(x), g_3(x)] where g_i are scaled rosenbrock functions'''
       def rosen(x):
-        """The Rosenbrock function"""
         return (100.0*(x[:,1:]-x[:,:-1]**2.0)**2.0 + (1-x[:,:-1])**2.0).sum(axis=1)
       def rosen_der(x):
         xm = x[:,1:-1]
@@ -210,9 +285,9 @@ def run_tests():
       xs, ys = u[:,0], u[:,1]
       data = rosen(u).reshape((n, m)); data = np.dstack([(k+1.)*data for k in range(ndim)])
 
-      f = SpatialFunction(xmin, xmax, ymin, ymax, data, precompute_jacs=True)
-      jacs = f.num_jac(xs, ys)
-      jacs2 = f.fast_num_jac(xs, ys)
+      f = SpatialFunction(xmin, xmax, ymin, ymax, data)
+      jacs = f.num_jac_direct(xs, ys)
+      jacs2 = f.num_jac(xs, ys)
       self.assertTrue(np.allclose(jacs, jacs2))
 
       true_jac_base = rosen_der(u)
@@ -221,6 +296,9 @@ def run_tests():
         true_jacs[:,k,:] = (k+1.)*true_jac_base
       self.assertTrue(np.absolute(true_jacs - jacs).max()/true_jacs.ptp() < .01)
 
+      # second derivatives
+      jac_fn = SpatialFunction(xmin, xmax, ymin, ymax, jacs.reshape((n, m, ndim, 2)))
+      self.assertTrue(np.allclose(jac_fn.num_jac_direct(xs, ys), jac_fn.num_jac(xs, ys)))
 
   suite = unittest.TestLoader().loadTestsFromTestCase(Tests)
   unittest.TextTestRunner(verbosity=2).run(suite)
@@ -233,50 +311,138 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   costs = {}
 
   # small flow
-  flow_cost = (u.data()**2).sum() * pixel_area
+  flow_cost = pixel_area * (u.data()**2).sum()
   # print 'flow cost', flow_cost
   costs['flow'] = flow_cost
-  total += flow_cost
+  # total += flow_cost
 
+  # smooth flow (small gradients)
+
+  #XXXXXXXXXXXXXXXXXXXXXXXX
+  #import IPython; IPython.embed()
   # # sdf and flow agree
   # shifted_sdf = prev_sdf.flow(u)
   # agree_cost = ((shifted_sdf.data() - sdf.data())**2).sum() * pixel_area
   # # print 'agree', agree_cost
   # costs['agree'] = agree_cost
   # total += agree_cost
+  #XXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-  #sdf_diff = SpatialFunction.InitLike(sdf, sdf.data() - prev_sdf.data(), precompute_jacs=True)
-  agree_cost = (((np.squeeze(sdf._df.data()) * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum() * pixel_area
+  # linearized optical flow
+  agree_cost = pixel_area * (((prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum()
   costs['agree'] = agree_cost
-  total += agree_cost
+  # total += agree_cost
 
+  # rigidity of flow
+  ### FINITE STRAIN
+  # J = (u.jac_data() + np.eye(2)[None,None,:,:]).reshape((-1, 2, 2))
+  # JT = np.transpose(J, axes=(0, 2, 1))
+  # products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
+  # rigid_cost = pixel_area * ((products - np.eye(2)[None,:,:])**2).sum()
+  ### INFINITESIMAL STRAIN
+  J = u.jac_data().reshape((-1, 2, 2))
+  JT = np.transpose(J, axes=(0, 2, 1))
+  rigid_cost = ((J + JT)**2).sum()
+  costs['rigid'] = rigid_cost #pixel_area * rigid_cost
+  total += rigid_cost
 
   # sdf is zero at observation points
   if not ignore_obs:
     sdf_at_obs = sdf.eval_xys(obs_n2)
-    # print 'sdf at obs', sdf_at_obs
-    # print 'sdf max', sdf.data().max()
-    obs_cost = (sdf_at_obs**2).sum() * np.sqrt(pixel_area)
-    # print 'obs cost', obs_cost
+    obs_cost = np.sqrt(pixel_area) * (sdf_at_obs**2).sum()
     costs['obs'] = obs_cost
-    costs['sdf_at_obs'] = sdf_at_obs
-    total += obs_cost
+    # total += obs_cost
 
   if return_full:
     return total, costs
   return total
 
 
-# def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
-#   out = np.zeros(sdf.size + u.size)
-#   if not ignore_obs:
-#     sdf_at_obs = sdf.eval_xys(obs_n2)
-#     print 'sdf at obs', sdf_at_obs
-#     print 'sdf max', sdf.data().max()
-#     obs_cost = (sdf_at_obs**2).sum() * np.sqrt(pixel_area)
-#     print 'obs cost', obs_cost
-#     total += obs_cost
-#   return out
+def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
+  grad = np.zeros(sdf.size() + u.size())
+  grad_sdf, grad_u = grad[:sdf.size()], grad[sdf.size():]
+
+  # flow_cost_grad_u = pixel_area * 2.*u.data().flatten()
+  # grad_u += flow_cost_grad_u
+
+  # agree_cost = (prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data()
+  # agree_cost_grad_sdf = pixel_area * 2. * agree_cost.flatten()
+  # agree_cost_grad_u = pixel_area * 2. * (agree_cost[:,:,None] * prev_sdf.jac_data()).flatten()
+  # grad_sdf += agree_cost_grad_sdf
+  # grad_u += agree_cost_grad_u
+
+  # J = (u.jac_data() + np.eye(2)[None,None,:,:]).reshape((-1, 2, 2))
+  # JT = np.transpose(J, axes=(0, 2, 1))
+  # products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
+  # rigid_cost = products - np.eye(2)[None,:,:]
+  # rigid_cost_grad_u = pixel_area * 2. * rigid_cost.sum(axis=1).flatten()
+  # grad_u += rigid_cost_grad_u
+
+  J = u.jac_data()
+  JT = np.transpose(J, axes=(0, 1, 3, 2))
+  M = J + JT
+  # M[0,:,:,:] *= 2
+  # M[-1,:,:,:] *= 2
+  # M[1:-1,0,:,:] *= 2
+  # M[1:-1,-1,:,:] *= 2
+  g = np.zeros(u.shape())
+  for i in range(u.shape()[0]):
+    for j in range(u.shape()[1]):
+      A = 0. if i == 0 else M[i-1,j,0,0]
+      B = 0. if i == u.shape()[0]-1 else M[i+1,j,0,0]
+      C = 0. if j == 0 else M[i,j-1,0,1]
+      D = 0. if j == u.shape()[1]-1 else M[i,j+1,0,1]
+
+      z = 2. / (u.shape()[0] - 1.) * (u.xmax - u.xmin)
+      a = (2. if i == 1 else 1.)*A
+      b = (2. if i == u.shape()[0]-2 else 1.)*B
+      c = (2. if j == 1 else 1.)*C
+      d = (2. if j == u.shape()[1]-2 else 1.)*D
+      e = 0
+      if i == 0:
+        e += -2.*M[i,j,0,0]
+      elif i == u.shape()[0]-1:
+        e += 2.*M[i,j,0,0]
+        
+      if j == 0:
+        e += -2.*M[i,j,0,1]
+      elif j == u.shape()[0]-1:
+        e += 2.*M[i,j,0,1]
+      g[i,j,0] = 4./z * (a - b + c - d + e)
+  grad_u += g.ravel()
+
+  # J = u.jac_data()
+  # blah = np.empty_like(u)
+  # blah[:,:,0] = -4. * (J[1:,:,0,0] - J[:-1,:,0,0])
+
+  #import IPython; IPython.embed()
+
+
+
+  # life too hard -- numdiff of finite strain
+  # def tmp_f(tmp_u):
+  #   J = (tmp_u.jac_data() + np.eye(2)[None,None,:,:]).reshape((-1, 2, 2))
+  #   JT = np.transpose(J, axes=(0, 2, 1))
+  #   products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
+  #   rigid_cost = pixel_area * ((products - np.eye(2)[None,:,:])**2).sum()
+  #   return rigid_cost
+  # tmp_u = u.copy()
+  # eps = 1e-5
+  # for i in range(tmp_u.size()):
+  #   orig = tmp_u.data().ravel()[i]
+  #   tmp_u.data().ravel()[i] = orig + eps
+  #   y2 = tmp_f(SpatialFunction.InitLike(tmp_u, tmp_u.data()))
+  #   tmp_u.data().ravel()[i] = orig - eps
+  #   y1 = tmp_f(SpatialFunction.InitLike(tmp_u, tmp_u.data()))
+  #   tmp_u.data().ravel()[i] = orig
+  #   grad_u[i] += (y2 - y1) / (2.*eps)
+
+  # if not ignore_obs:
+  #   sdf_at_obs = sdf.eval_xys(obs_n2)
+  #   obs_cost_grad_sdf = np.sqrt(pixel_area) * 2. * (sdf_at_obs[:,None,None] * grid_interp_grad(sdf.data(), np.c_[sdf.to_grid_inds(obs_n2[:,0], obs_n2[:,1])])).sum(axis=0).flatten()
+  #   grad_sdf += obs_cost_grad_sdf
+
+  return grad
 
 
 SIZE = 10
@@ -313,10 +479,12 @@ class Tracker(object):
     cmap[:,2] = range(256)[::-1]
     cmap[0] = [0,0,0]
     flatland.show_2d_image(cmap[np.fmin((np.clip(self.sdf.to_image_fmt(), 0, np.inf)*255).astype('int'), 255)], "sdf")
+    cv2.moveWindow("sdf", 550, 0)
 
     # plot flow field
     # print 'curr flow\n', self.curr_u.data()
     self.curr_u.show_as_vector_field("u")
+    cv2.moveWindow("u", 0, 600)
 
     total, costs = _eval_cost(PIXEL_AREA, self.curr_obs, self.prev_sdf, self.sdf, self.curr_u, ignore_obs=self.curr_obs is None, return_full=True)
     print 'total cost', total
@@ -329,8 +497,9 @@ class Tracker(object):
     def state_to_vec(sdf, u):
       return np.concatenate((sdf.data().flatten(), u.data().flatten()))
     def vec_to_state(vec):
-      sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()), precompute_jacs=self.sdf._df is not None)
-      u = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.shape()), precompute_jacs=self.sdf._df is not None)
+      assert len(vec) == dim_sdf + dim_u
+      sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()))
+      u = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[dim_sdf:].reshape(self.curr_u.shape()))
       return sdf, u
 
     tmp_sdf, tmp_u = vec_to_state(state_to_vec(self.sdf, self.curr_u))
@@ -338,15 +507,27 @@ class Tracker(object):
 
     print 'number of variables:', dim_sdf + dim_u
 
-    self.i = 0
     def func(x):
       sdf, u = vec_to_state(x)
       cost = self.eval_cost(sdf, u)
-      self.i += 1
-      # if self.i % 1000 == 0:
-      #   self.plot()
-      #   cv2.waitKey()
       return cost
+
+    def func_grad(x):
+      sdf, u = vec_to_state(x)
+      return _eval_cost_grad(PIXEL_AREA, self.curr_obs, self.prev_sdf, sdf, u)
+
+    def func_grad_nd(x, eps=1e-5):
+      grad = np.empty_like(x)
+      dx = np.eye(len(x)) * eps
+      for i in range(len(x)):
+        grad[i] = (func(x+dx[i]) - func(x-dx[i])) / (2.*eps)
+      #assert np.allclose(func_grad(x), grad)
+      return grad
+
+    rand_x = np.random.rand(dim_sdf + dim_u)
+    g1 = func_grad_nd(rand_x)
+    g2 = func_grad(rand_x)
+    import IPython; IPython.embed()
 
     zero_u = self.curr_u.copy(); zero_u.data().fill(0)
     x0 = state_to_vec(self.prev_sdf, zero_u) # zero u?
@@ -354,7 +535,7 @@ class Tracker(object):
     print 'initial costs:', self.eval_cost(self.prev_sdf, self.curr_u, return_full=True)
     print 'old sdf\n', self.prev_sdf.data()
 
-    xopt = scipy.optimize.fmin_cg(func, x0, epsilon=1e-5, disp=True, maxiter=20)
+    xopt = scipy.optimize.fmin_cg(func, x0, fprime=func_grad_nd, disp=True)#, maxiter=20)
     new_sdf, new_u = vec_to_state(xopt)
 
     print 'Done optimizing.'
@@ -363,9 +544,6 @@ class Tracker(object):
     print 'final costs:', self.eval_cost(new_sdf, new_u, return_full=True)
     print 'new sdf\n', new_sdf.data()
     self.sdf, self.curr_u = new_sdf, new_u
-
-
-    print 'Num evals:', self.i
     return new_sdf, new_u
 
 def main():
@@ -377,19 +555,25 @@ def main():
   if args.test:
     run_tests()
 
-  poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
-  #poly = flatland.Polygon([[0, 0], [1, 0]])#, [1,1], [1,0]])
-  polylist = [poly]
   cam_t = (0, -.5)
   r_angle = 0
   fov = 75 * np.pi/180.
   cam1d = flatland.Camera1d(cam_t, r_angle, fov, SIZE)
   cam2d = flatland.Camera2d(WORLD_MIN, WORLD_MAX, SIZE)
 
-  empty_sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.ones((SIZE, SIZE)), precompute_jacs=True)
+  empty_sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.ones((SIZE, SIZE)))
   tracker = Tracker(empty_sdf)
 
+  poly_center = np.array([0., 0.])
+  poly_scale = .5
+  poly_rot = 0.
   while True:
+    poly_pts = np.array([[-0.5, -0.5], [ 0.5, -0.5], [ 0.5,  0.5], [-0.5,  0.5]]).dot(flatland.rotation2d(poly_rot).T)*poly_scale + poly_center[None,:]
+
+    #poly = flatland.Polygon([[.2, .2], [0,1], [1,1], [1,.5]])
+    poly = flatland.Polygon(poly_pts)
+    polylist = [poly]
+
     image1d, depth1d = cam1d.render(polylist)
     print 'depth1d', depth1d
 
@@ -407,7 +591,8 @@ def main():
     image2d = cam2d.render(polylist + obs_render_list + camera_poly_list)
 
     flatland.show_1d_image([image1d, depth1d_image], "image1d+depth1d")
-    flatland.show_2d_image(image2d)
+    flatland.show_2d_image(image2d, "image2d")
+    cv2.moveWindow("image2d", 0, 0)
     #flatland.show_2d_image(, "tracker_state")
     key = cv2.waitKey() & 255
     print "key", key
@@ -421,13 +606,18 @@ def main():
         cam1d.t[1] -= .1
     elif key == 83:
         cam1d.t[0] -= .1
-    elif key == ord('-'):
+    elif key == ord('['):
         cam1d.r_angle -= .1
-    elif key == ord('='):
+    elif key == ord(']'):
         cam1d.r_angle += .1
 
     elif key == ord('q'):
         break
+
+    elif key == ord('-'):
+      poly_rot -= .1
+    elif key == ord('='):
+      poly_rot += .1
 
     elif key == ord('c'):
       tracker = Tracker(empty_sdf)
@@ -448,7 +638,7 @@ def main():
       image2d_filled = cam2d.render(polylist)
       for orig, p in zip(orig_filling, polylist): p.filled = orig
       init_sdf_img[image2d_filled[:,:,0] > .5] *= -1
-      init_sdf = SpatialFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img, precompute_jacs=True)
+      init_sdf = SpatialFunction.FromImage(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], init_sdf_img)
 
       tracker = Tracker(init_sdf)
       tracker.observe(filtered_obs_XYs)
