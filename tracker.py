@@ -187,8 +187,7 @@ class SpatialFunction(object):
     assert self.output_dim == (2,)
 
     img_size = (500, 500)
-    arrow_res = 10
-    nx, ny = int(img_size[0]/arrow_res), int(img_size[1]/arrow_res)
+    nx, ny = self._f.shape[0], self._f.shape[1]
     def to_img_inds(xys):
       xs, ys = xys[:,0], xys[:,1]
       ixs = (xs - self.xmin)*(img_size[0] - 1.)/(self.xmax - self.xmin)
@@ -197,11 +196,13 @@ class SpatialFunction(object):
 
     vec_starts = np.transpose(np.meshgrid(np.linspace(self.xmin, self.xmax, nx), np.linspace(self.ymin, self.ymax, ny)))
     vec_dirs = self.eval_xys(vec_starts.reshape((-1,2))).reshape((nx, ny, 2))
-    vec_ends = vec_starts + vec_dirs
+    vec_ends = vec_starts + vec_dirs*10
 
     img = np.zeros(img_size + (3,))
     for start, end in zip(to_img_inds(vec_starts.reshape((-1,2))), to_img_inds(vec_ends.reshape((-1,2)))):
       cv2.line(img, tuple(start), tuple(end), (1.,1.,1))
+      #cv2.circle(img, tuple(start), 1, (0,1.,0))
+      img[int(start[1]), int(start[0])] = (0, 1., 0)
     flatland.show_2d_image(np.flipud(np.fliplr(img)), windowname)
 
 
@@ -304,6 +305,12 @@ def run_tests():
   unittest.TextTestRunner(verbosity=2).run(suite)
 
 
+class Weights:
+  flow_norm = 1.
+  flow = 1.
+  rigidity = 10.
+  obs = 1.
+
 def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_full=False):
   ''' everything in world coordinates '''
 
@@ -311,11 +318,14 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   costs = {}
 
   # small flow
-  flow_cost = pixel_area * (u.data()**2).sum()
+  flow_cost = Weights.flow_norm * pixel_area * (u.data()**2).sum()
   costs['flow'] = flow_cost
   total += flow_cost
 
   # smooth flow (small gradients)
+  # flow_smooth_cost = pixel_area * (u.jac_data()**2).sum()
+  # costs['flow_smooth'] = flow_smooth_cost
+  # total += flow_smooth_cost
 
   #XXXXXXXXXXXXXXXXXXXXXXXX
   #import IPython; IPython.embed()
@@ -328,7 +338,7 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   #XXXXXXXXXXXXXXXXXXXXXXXXXXX
 
   # linearized optical flow
-  agree_cost = pixel_area * (((prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum()
+  agree_cost = Weights.flow * pixel_area * (((prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum()
   costs['agree'] = agree_cost
   total += agree_cost
 
@@ -343,14 +353,14 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   J = u.jac_data()
   JT = np.transpose(J, axes=(0, 1, 3, 2))
   M = J + JT
-  rigid_cost = pixel_area * (M**2).sum()
+  rigid_cost = Weights.rigidity * pixel_area * (M**2).sum()
   costs['rigid'] = rigid_cost
   total += rigid_cost
 
   # sdf is zero at observation points
   if not ignore_obs:
     sdf_at_obs = sdf.eval_xys(obs_n2)
-    obs_cost = np.sqrt(pixel_area) * (sdf_at_obs**2).sum()
+    obs_cost = Weights.obs * np.sqrt(pixel_area) * (sdf_at_obs**2).sum()
     costs['obs'] = obs_cost
     total += obs_cost
 
@@ -363,16 +373,15 @@ import time
 def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
   t_start = time.time()
 
-
   grad = np.zeros(sdf.size() + u.size())
   grad_sdf, grad_u = grad[:sdf.size()], grad[sdf.size():]
 
-  flow_cost_grad_u = pixel_area * 2.*u.data().flatten()
+  flow_cost_grad_u = Weights.flow_norm * pixel_area * 2.*u.data().ravel()
   grad_u += flow_cost_grad_u
 
   agree_cost = (prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data()
-  agree_cost_grad_sdf = pixel_area * 2. * agree_cost.flatten()
-  agree_cost_grad_u = pixel_area * 2. * (agree_cost[:,:,None] * prev_sdf.jac_data()).flatten()
+  agree_cost_grad_sdf = Weights.flow * pixel_area * 2. * agree_cost.ravel()
+  agree_cost_grad_u = Weights.flow * pixel_area * 2. * (agree_cost[:,:,None] * prev_sdf.jac_data()).ravel()
   grad_sdf += agree_cost_grad_sdf
   grad_u += agree_cost_grad_u
 
@@ -435,7 +444,7 @@ def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
   E[:,0] += -2.*M[:,0,0,1]
   E[:,-1] += 2.*M[:,-1,0,1]
   rigid_cost_grad_u[:,:,0] = 2.*(u.shape()[0] - 1.)/(u.xmax - u.xmin) * (A - B + C - D + E)
-  E.fill(0.)
+  A.fill(0.); B.fill(0.); C.fill(0.); D.fill(0.); E.fill(0.)
   A[1:,:] = M[:-1,:,0,1]; A[1,:] *= 2.
   B[:-1,:] = M[1:,:,0,1]; B[-2,:] *= 2.
   C[:,1:] = M[:,:-1,1,1]; C[:,1] *= 2.
@@ -445,12 +454,12 @@ def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
   E[:,0] += -2.*M[:,0,1,1]
   E[:,-1] += 2.*M[:,-1,1,1]
   rigid_cost_grad_u[:,:,1] = 2.*(u.shape()[1] - 1.)/(u.ymax - u.ymin) * (A - B + C - D + E)
-  rigid_cost_grad_u *= pixel_area
+  rigid_cost_grad_u *= Weights.rigidity * pixel_area
   grad_u += rigid_cost_grad_u.ravel()
 
   if not ignore_obs:
     sdf_at_obs = sdf.eval_xys(obs_n2)
-    obs_cost_grad_sdf = np.sqrt(pixel_area) * 2. * (sdf_at_obs[:,None,None] * grid_interp_grad(sdf.data(), np.c_[sdf.to_grid_inds(obs_n2[:,0], obs_n2[:,1])])).sum(axis=0).flatten()
+    obs_cost_grad_sdf = Weights.obs * np.sqrt(pixel_area) * 2. * (sdf_at_obs[:,None,None] * grid_interp_grad(sdf.data(), np.c_[sdf.to_grid_inds(obs_n2[:,0], obs_n2[:,1])])).sum(axis=0).ravel()
     grad_sdf += obs_cost_grad_sdf
 
 
@@ -459,7 +468,7 @@ def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
   return grad
 
 
-SIZE = 30
+SIZE = 100
 WORLD_MIN = (-1, -1)
 WORLD_MAX = (1, 1)
 PIXEL_AREA = 4./SIZE/SIZE
@@ -509,7 +518,7 @@ class Tracker(object):
 
     dim_sdf, dim_u = self.sdf.size(), self.curr_u.size()
     def state_to_vec(sdf, u):
-      return np.concatenate((sdf.data().flatten(), u.data().flatten()))
+      return np.concatenate((sdf.data().ravel(), u.data().ravel()))
     def vec_to_state(vec):
       assert len(vec) == dim_sdf + dim_u
       sdf = SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], vec[:dim_sdf].reshape(self.sdf.shape()))
@@ -538,18 +547,21 @@ class Tracker(object):
       # assert np.allclose(func_grad(x), grad)
       return grad
 
-    # rand_x = np.random.rand(dim_sdf + dim_u)*1000
+    # rand_x = (np.random.rand(dim_sdf + dim_u) - .5) * 100
+    # print 'numerical grad'
     # g1 = func_grad_nd(rand_x)
+    # print 'analytical grad'
     # g2 = func_grad(rand_x)
     # import IPython; IPython.embed()
 
-    zero_u = self.curr_u.copy(); zero_u.data().fill(0)
-    x0 = state_to_vec(self.prev_sdf, zero_u) # zero u?
+    #zero_u = self.curr_u.copy(); zero_u.data().fill(0)
+    #x0 = state_to_vec(self.prev_sdf, zero_u) # zero u?
+    x0 = state_to_vec(self.prev_sdf, self.curr_u)
 
     print 'initial costs:', self.eval_cost(self.prev_sdf, self.curr_u, return_full=True)
     print 'old sdf\n', self.prev_sdf.data()
 
-    xopt = scipy.optimize.fmin_cg(func, x0, fprime=func_grad, disp=True, maxiter=1000)
+    xopt = scipy.optimize.fmin_cg(func, x0, fprime=func_grad, disp=True, maxiter=2000)
     new_sdf, new_u = vec_to_state(xopt)
 
     print 'Done optimizing.'
