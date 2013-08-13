@@ -312,9 +312,8 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
 
   # small flow
   flow_cost = pixel_area * (u.data()**2).sum()
-  # print 'flow cost', flow_cost
   costs['flow'] = flow_cost
-  # total += flow_cost
+  total += flow_cost
 
   # smooth flow (small gradients)
 
@@ -331,7 +330,7 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   # linearized optical flow
   agree_cost = pixel_area * (((prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum()
   costs['agree'] = agree_cost
-  # total += agree_cost
+  total += agree_cost
 
   # rigidity of flow
   ### FINITE STRAIN
@@ -340,10 +339,12 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   # products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
   # rigid_cost = pixel_area * ((products - np.eye(2)[None,:,:])**2).sum()
   ### INFINITESIMAL STRAIN
-  J = u.jac_data().reshape((-1, 2, 2))
-  JT = np.transpose(J, axes=(0, 2, 1))
-  rigid_cost = ((J + JT)**2).sum()
-  costs['rigid'] = rigid_cost #pixel_area * rigid_cost
+
+  J = u.jac_data()
+  JT = np.transpose(J, axes=(0, 1, 3, 2))
+  M = J + JT
+  rigid_cost = pixel_area * (M**2).sum()
+  costs['rigid'] = rigid_cost
   total += rigid_cost
 
   # sdf is zero at observation points
@@ -351,101 +352,114 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
     sdf_at_obs = sdf.eval_xys(obs_n2)
     obs_cost = np.sqrt(pixel_area) * (sdf_at_obs**2).sum()
     costs['obs'] = obs_cost
-    # total += obs_cost
+    total += obs_cost
 
   if return_full:
     return total, costs
   return total
 
 
+import time
 def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
+  t_start = time.time()
+
+
   grad = np.zeros(sdf.size() + u.size())
   grad_sdf, grad_u = grad[:sdf.size()], grad[sdf.size():]
 
-  # flow_cost_grad_u = pixel_area * 2.*u.data().flatten()
-  # grad_u += flow_cost_grad_u
+  flow_cost_grad_u = pixel_area * 2.*u.data().flatten()
+  grad_u += flow_cost_grad_u
 
-  # agree_cost = (prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data()
-  # agree_cost_grad_sdf = pixel_area * 2. * agree_cost.flatten()
-  # agree_cost_grad_u = pixel_area * 2. * (agree_cost[:,:,None] * prev_sdf.jac_data()).flatten()
-  # grad_sdf += agree_cost_grad_sdf
-  # grad_u += agree_cost_grad_u
-
-  # J = (u.jac_data() + np.eye(2)[None,None,:,:]).reshape((-1, 2, 2))
-  # JT = np.transpose(J, axes=(0, 2, 1))
-  # products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
-  # rigid_cost = products - np.eye(2)[None,:,:]
-  # rigid_cost_grad_u = pixel_area * 2. * rigid_cost.sum(axis=1).flatten()
-  # grad_u += rigid_cost_grad_u
+  agree_cost = (prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data()
+  agree_cost_grad_sdf = pixel_area * 2. * agree_cost.flatten()
+  agree_cost_grad_u = pixel_area * 2. * (agree_cost[:,:,None] * prev_sdf.jac_data()).flatten()
+  grad_sdf += agree_cost_grad_sdf
+  grad_u += agree_cost_grad_u
 
   J = u.jac_data()
   JT = np.transpose(J, axes=(0, 1, 3, 2))
   M = J + JT
-  # M[0,:,:,:] *= 2
-  # M[-1,:,:,:] *= 2
-  # M[1:-1,0,:,:] *= 2
-  # M[1:-1,-1,:,:] *= 2
-  g = np.zeros(u.shape())
-  for i in range(u.shape()[0]):
-    for j in range(u.shape()[1]):
-      A = 0. if i == 0 else M[i-1,j,0,0]
-      B = 0. if i == u.shape()[0]-1 else M[i+1,j,0,0]
-      C = 0. if j == 0 else M[i,j-1,0,1]
-      D = 0. if j == u.shape()[1]-1 else M[i,j+1,0,1]
+  rigid_cost_grad_u = np.zeros(u.shape())
+  # alternative loop implementation
+  # for i in range(u.shape()[0]):
+  #   for j in range(u.shape()[1]):
+  #     A = 0. if i == 0 else M[i-1,j,0,0]
+  #     B = 0. if i == u.shape()[0]-1 else M[i+1,j,0,0]
+  #     C = 0. if j == 0 else M[i,j-1,0,1]
+  #     D = 0. if j == u.shape()[1]-1 else M[i,j+1,0,1]
+  #     z = 2. / (u.shape()[0] - 1.) * (u.xmax - u.xmin)
+  #     a = (2. if i == 1 else 1.)*A
+  #     b = (2. if i == u.shape()[0]-2 else 1.)*B
+  #     c = (2. if j == 1 else 1.)*C
+  #     d = (2. if j == u.shape()[1]-2 else 1.)*D
+  #     e = 0
+  #     if i == 0:
+  #       e += -2.*M[i,j,0,0]
+  #     elif i == u.shape()[0]-1:
+  #       e += 2.*M[i,j,0,0]
+  #     if j == 0:
+  #       e += -2.*M[i,j,0,1]
+  #     elif j == u.shape()[0]-1:
+  #       e += 2.*M[i,j,0,1]
+  #     rigid_cost_grad_u[i,j,0] = 4./z * (a - b + c - d + e)
+  #     A = 0. if i == 0 else M[i-1,j,0,1]
+  #     B = 0. if i == u.shape()[0]-1 else M[i+1,j,0,1]
+  #     C = 0. if j == 0 else M[i,j-1,1,1]
+  #     D = 0. if j == u.shape()[1]-1 else M[i,j+1,1,1]
+  #     z = 2. / (u.shape()[1] - 1.) * (u.ymax - u.ymin)
+  #     a = (2. if i == 1 else 1.)*A
+  #     b = (2. if i == u.shape()[0]-2 else 1.)*B
+  #     c = (2. if j == 1 else 1.)*C
+  #     d = (2. if j == u.shape()[1]-2 else 1.)*D
+  #     e = 0
+  #     if i == 0:
+  #       e += -2.*M[i,j,0,1]
+  #     elif i == u.shape()[0]-1:
+  #       e += 2.*M[i,j,0,1]
+  #     if j == 0:
+  #       e += -2.*M[i,j,1,1]
+  #     elif j == u.shape()[0]-1:
+  #       e += 2.*M[i,j,1,1]
+  #     rigid_cost_grad_u[i,j,1] = 4./z * (a - b + c - d + e)
+  A = np.zeros((u.shape()[0], u.shape()[1]))
+  B = np.zeros((u.shape()[0], u.shape()[1]))
+  C = np.zeros((u.shape()[0], u.shape()[1]))
+  D = np.zeros((u.shape()[0], u.shape()[1]))
+  E = np.zeros((u.shape()[0], u.shape()[1]))
+  A[1:,:] = M[:-1,:,0,0]; A[1,:] *= 2.
+  B[:-1,:] = M[1:,:,0,0]; B[-2,:] *= 2.
+  C[:,1:] = M[:,:-1,0,1]; C[:,1] *= 2.
+  D[:,:-1] = M[:,1:,0,1]; D[:,-2] *= 2.
+  E[0,:] = -2.*M[0,:,0,0]
+  E[-1,:] = 2.*M[-1,:,0,0]
+  E[:,0] += -2.*M[:,0,0,1]
+  E[:,-1] += 2.*M[:,-1,0,1]
+  rigid_cost_grad_u[:,:,0] = 2.*(u.shape()[0] - 1.)/(u.xmax - u.xmin) * (A - B + C - D + E)
+  E.fill(0.)
+  A[1:,:] = M[:-1,:,0,1]; A[1,:] *= 2.
+  B[:-1,:] = M[1:,:,0,1]; B[-2,:] *= 2.
+  C[:,1:] = M[:,:-1,1,1]; C[:,1] *= 2.
+  D[:,:-1] = M[:,1:,1,1]; D[:,-2] *= 2.
+  E[0,:] = -2.*M[0,:,0,1]
+  E[-1,:] = 2.*M[-1,:,0,1]
+  E[:,0] += -2.*M[:,0,1,1]
+  E[:,-1] += 2.*M[:,-1,1,1]
+  rigid_cost_grad_u[:,:,1] = 2.*(u.shape()[1] - 1.)/(u.ymax - u.ymin) * (A - B + C - D + E)
+  rigid_cost_grad_u *= pixel_area
+  grad_u += rigid_cost_grad_u.ravel()
 
-      z = 2. / (u.shape()[0] - 1.) * (u.xmax - u.xmin)
-      a = (2. if i == 1 else 1.)*A
-      b = (2. if i == u.shape()[0]-2 else 1.)*B
-      c = (2. if j == 1 else 1.)*C
-      d = (2. if j == u.shape()[1]-2 else 1.)*D
-      e = 0
-      if i == 0:
-        e += -2.*M[i,j,0,0]
-      elif i == u.shape()[0]-1:
-        e += 2.*M[i,j,0,0]
-        
-      if j == 0:
-        e += -2.*M[i,j,0,1]
-      elif j == u.shape()[0]-1:
-        e += 2.*M[i,j,0,1]
-      g[i,j,0] = 4./z * (a - b + c - d + e)
-  grad_u += g.ravel()
-
-  # J = u.jac_data()
-  # blah = np.empty_like(u)
-  # blah[:,:,0] = -4. * (J[1:,:,0,0] - J[:-1,:,0,0])
-
-  #import IPython; IPython.embed()
+  if not ignore_obs:
+    sdf_at_obs = sdf.eval_xys(obs_n2)
+    obs_cost_grad_sdf = np.sqrt(pixel_area) * 2. * (sdf_at_obs[:,None,None] * grid_interp_grad(sdf.data(), np.c_[sdf.to_grid_inds(obs_n2[:,0], obs_n2[:,1])])).sum(axis=0).flatten()
+    grad_sdf += obs_cost_grad_sdf
 
 
-
-  # life too hard -- numdiff of finite strain
-  # def tmp_f(tmp_u):
-  #   J = (tmp_u.jac_data() + np.eye(2)[None,None,:,:]).reshape((-1, 2, 2))
-  #   JT = np.transpose(J, axes=(0, 2, 1))
-  #   products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
-  #   rigid_cost = pixel_area * ((products - np.eye(2)[None,:,:])**2).sum()
-  #   return rigid_cost
-  # tmp_u = u.copy()
-  # eps = 1e-5
-  # for i in range(tmp_u.size()):
-  #   orig = tmp_u.data().ravel()[i]
-  #   tmp_u.data().ravel()[i] = orig + eps
-  #   y2 = tmp_f(SpatialFunction.InitLike(tmp_u, tmp_u.data()))
-  #   tmp_u.data().ravel()[i] = orig - eps
-  #   y1 = tmp_f(SpatialFunction.InitLike(tmp_u, tmp_u.data()))
-  #   tmp_u.data().ravel()[i] = orig
-  #   grad_u[i] += (y2 - y1) / (2.*eps)
-
-  # if not ignore_obs:
-  #   sdf_at_obs = sdf.eval_xys(obs_n2)
-  #   obs_cost_grad_sdf = np.sqrt(pixel_area) * 2. * (sdf_at_obs[:,None,None] * grid_interp_grad(sdf.data(), np.c_[sdf.to_grid_inds(obs_n2[:,0], obs_n2[:,1])])).sum(axis=0).flatten()
-  #   grad_sdf += obs_cost_grad_sdf
+  print 'grad eval time: %f, grad norm: %f' % (time.time()-t_start, np.linalg.norm(grad))
 
   return grad
 
 
-SIZE = 10
+SIZE = 30
 WORLD_MIN = (-1, -1)
 WORLD_MAX = (1, 1)
 PIXEL_AREA = 4./SIZE/SIZE
@@ -521,13 +535,13 @@ class Tracker(object):
       dx = np.eye(len(x)) * eps
       for i in range(len(x)):
         grad[i] = (func(x+dx[i]) - func(x-dx[i])) / (2.*eps)
-      #assert np.allclose(func_grad(x), grad)
+      # assert np.allclose(func_grad(x), grad)
       return grad
 
-    rand_x = np.random.rand(dim_sdf + dim_u)
-    g1 = func_grad_nd(rand_x)
-    g2 = func_grad(rand_x)
-    import IPython; IPython.embed()
+    # rand_x = np.random.rand(dim_sdf + dim_u)*1000
+    # g1 = func_grad_nd(rand_x)
+    # g2 = func_grad(rand_x)
+    # import IPython; IPython.embed()
 
     zero_u = self.curr_u.copy(); zero_u.data().fill(0)
     x0 = state_to_vec(self.prev_sdf, zero_u) # zero u?
@@ -535,7 +549,7 @@ class Tracker(object):
     print 'initial costs:', self.eval_cost(self.prev_sdf, self.curr_u, return_full=True)
     print 'old sdf\n', self.prev_sdf.data()
 
-    xopt = scipy.optimize.fmin_cg(func, x0, fprime=func_grad_nd, disp=True)#, maxiter=20)
+    xopt = scipy.optimize.fmin_cg(func, x0, fprime=func_grad, disp=True, maxiter=1000)
     new_sdf, new_u = vec_to_state(xopt)
 
     print 'Done optimizing.'
