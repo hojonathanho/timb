@@ -1,6 +1,5 @@
 import numpy as np
 import sympy
-np.random.seed(0)
 
 def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
   '''
@@ -60,6 +59,8 @@ class BicubicSurface(object):
     self.eps_x = (self.xmax-self.xmin)/(data.shape[0]-1.)
     self.eps_y = (self.ymax-self.ymin)/(data.shape[1]-1.)
     self.nx, self.ny = data.shape[0], data.shape[1]
+
+    self.data = data
 
     self.padded_data = np.empty((data.shape[0]+2, data.shape[1]+2), dtype=data.dtype)
     self.padded_data[1:-1,1:-1] = data
@@ -132,6 +133,8 @@ class BicubicSurface(object):
 
 
 if __name__ == '__main__':
+  np.random.seed(0)
+
   rows, cols = 5, 5
   init_data = np.random.rand(rows, cols)
   assert np.allclose(np.dstack(np.gradient(init_data)), gradient(init_data))
@@ -162,4 +165,4 @@ if __name__ == '__main__':
   import sympy
   mat = sympy.symarray('m', (rows, cols))
   sg = BicubicSurface(-1, 1, -2, 2, mat)
-  #import IPython; IPython.embed()
+  import IPython; IPython.embed()
