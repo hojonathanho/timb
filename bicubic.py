@@ -7,6 +7,8 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
   Gradients of scalar field
   Input: u (NxM)
   Output: gradient field (NxMx2) if wrt == 'xy', or just NxM if wrt == 'x' or 'y'
+
+  Like np.gradient, except works with sympy
   '''
   if wrt == 'xy':
     out_shape = u.shape + (2,)
@@ -31,7 +33,7 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
  
   return g
 
-class BicubicInterp(object):
+class BicubicSurface(object):
 
   bicubic_Ainv = np.array([
     [ 1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
@@ -49,7 +51,8 @@ class BicubicInterp(object):
     [ 2,  0, -2,  0,  0,  0,  0,  0,  1,  0,  1,  0,  0,  0,  0,  0],
     [ 0,  0,  0,  0,  2,  0, -2,  0,  0,  0,  0,  0,  1,  0,  1,  0],
     [-6,  6,  6, -6, -4, -2,  4,  2, -3,  3, -3,  3, -2, -1, -2, -1],
-    [ 4, -4, -4,  4,  2,  2, -2, -2,  2, -2,  2, -2,  1,  1,  1,  1]]
+    [ 4, -4, -4,  4,  2,  2, -2, -2,  2, -2,  2, -2,  1,  1,  1,  1]],
+    dtype=float
   )
 
   def __init__(self, xmin, xmax, ymin, ymax, data):
@@ -134,7 +137,7 @@ if __name__ == '__main__':
   assert np.allclose(np.dstack(np.gradient(init_data)), gradient(init_data))
   print 'ok'
 
-  g = BicubicInterp(-1, 1, -2, 2, init_data)
+  g = BicubicSurface(-1, 1, -2, 2, init_data)
 
   import matplotlib.cm as cm
   import matplotlib.pyplot as plt
@@ -158,5 +161,5 @@ if __name__ == '__main__':
 
   import sympy
   mat = sympy.symarray('m', (rows, cols))
-  sg = BicubicInterp(-1, 1, -2, 2, mat)
+  sg = BicubicSurface(-1, 1, -2, 2, mat)
   #import IPython; IPython.embed()
