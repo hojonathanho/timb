@@ -153,8 +153,9 @@ class Render2d(Renderer):
         cv2.fillPoly(self.image, [np.int32(xys)], self.color)
     def point(self, XY):
         x, y = self.P[:2,:2].dot(XY) + self.P[:2,2]
-        if 0 <= int(y) < self.image.shape[0] and 0 <= int(x) < self.image.shape[1]:
-            self.image[int(y), int(x), :] = self.color
+        ix, iy = int(x), int(y)
+        if 0 <= iy < self.image.shape[0] and 0 <= ix < self.image.shape[1]:
+            self.image[iy,ix,:] = self.color
         #cv2.circle(self.image, (int(x), int(y)), 1, self.color)
 
 class Drawable(object):

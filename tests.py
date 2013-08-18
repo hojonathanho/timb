@@ -31,7 +31,7 @@ class Tests(unittest.TestCase):
     self.assertTrue(np.allclose(g1, g2))
 
     u2 = np.random.rand(30, 2)
-    u2[:,0] *= n-1; u[:,1] *= m-1
+    u2[:,0] *= n-1; u2[:,1] *= m-1
     g3 = grid_interp_grad_nd(data, u2)
     g4 = grid_interp_grad(data, u2)
     self.assertTrue(np.allclose(g3, g4))

@@ -7,6 +7,10 @@ class Weights:
   flow = 1.
   rigidity = 10.
   obs = 1.
+  sdf_pd = .01
+
+def sumsq(a):
+  return (a**2).sum()
 
 def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_full=False):
   ''' everything in world coordinates '''
@@ -15,7 +19,7 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   costs = {}
 
   # small flow
-  flow_cost = Weights.flow_norm * pixel_area * (u.data()**2).sum()
+  flow_cost = Weights.flow_norm * pixel_area * sumsq(u.data())
   costs['flow_norm'] = flow_cost
   total += flow_cost
 
@@ -35,7 +39,7 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   #XXXXXXXXXXXXXXXXXXXXXXXXXXX
 
   # linearized optical flow
-  agree_cost = Weights.flow * pixel_area * (((prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())**2).sum()
+  agree_cost = Weights.flow * pixel_area * sumsq((prev_sdf.jac_data() * u.data()).sum(axis=2) + sdf.data() - prev_sdf.data())
   costs['flow'] = agree_cost
   total += agree_cost
 
@@ -46,20 +50,25 @@ def _eval_cost(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False, return_fu
   # products = (JT[:,:,:,None] * J[:,None,:,:]).sum(axis=2)
   # rigid_cost = pixel_area * ((products - np.eye(2)[None,:,:])**2).sum()
   ### INFINITESIMAL STRAIN
-
   J = u.jac_data()
   JT = np.transpose(J, axes=(0, 1, 3, 2))
   M = J + JT
-  rigid_cost = Weights.rigidity * pixel_area * (M**2).sum()
+  rigid_cost = Weights.rigidity * pixel_area * sumsq(M)
   costs['rigidity'] = rigid_cost
   total += rigid_cost
 
   # sdf is zero at observation points
   if not ignore_obs:
     sdf_at_obs = sdf.eval_xys(obs_n2)
-    obs_cost = Weights.obs * np.sqrt(pixel_area) * (sdf_at_obs**2).sum()
+    obs_cost = Weights.obs * np.sqrt(pixel_area) * sumsq(sdf_at_obs)
     costs['obs'] = obs_cost
     total += obs_cost
+
+
+  # sdf close to old sdf (to ensure cost is positive definite)
+  sdf_pd_cost = Weights.sdf_pd * pixel_area * sumsq(sdf.data() - prev_sdf.data())
+  costs['sdf_pd'] = sdf_pd_cost
+  total += sdf_pd_cost
 
   if return_full:
     return total, costs
@@ -158,6 +167,10 @@ def _eval_cost_grad(pixel_area, obs_n2, prev_sdf, sdf, u, ignore_obs=False):
     sdf_at_obs = sdf.eval_xys(obs_n2)
     obs_cost_grad_sdf = Weights.obs * np.sqrt(pixel_area) * 2. * (sdf_at_obs[:,None,None] * grid_interp_grad(sdf.data(), np.c_[sdf.to_grid_inds(obs_n2[:,0], obs_n2[:,1])])).sum(axis=0).ravel()
     grad_sdf += obs_cost_grad_sdf
+
+
+  # sdf close to old sdf (to ensure cost is positive definite)
+  grad_sdf += Weights.sdf_pd * pixel_area * 2.*(sdf.data() - prev_sdf.data()).ravel()
 
 
   #print 'grad eval time: %f, grad norm: %f' % (time.time()-t_start, np.linalg.norm(grad))

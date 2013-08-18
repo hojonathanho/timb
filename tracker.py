@@ -8,7 +8,7 @@ import solvers, grid
 np.set_printoptions(linewidth=10000)
 
 
-SIZE = 40
+SIZE = 10
 WORLD_MIN = (-1, -1)
 WORLD_MAX = (1, 1)
 PIXEL_AREA = 4./SIZE/SIZE
@@ -119,7 +119,7 @@ class Tracker(object):
     print 'final costs:', self.eval_cost(new_sdf, new_u, return_full=True)
     print 'new sdf\n', new_sdf.data()
     self.sdf, self.curr_u = new_sdf, new_u
-    solvers.Weights.flow = 100.
+    #solvers.Weights.flow = 100.
     return new_sdf, new_u
 
 def main():
@@ -170,7 +170,6 @@ def main():
     flatland.show_1d_image([image1d, depth1d_image], "image1d+depth1d")
     flatland.show_2d_image(image2d, "image2d")
     cv2.moveWindow("image2d", 0, 0)
-    #flatland.show_2d_image(, "tracker_state")
     key = cv2.waitKey() & 255
     print "key", key
 
@@ -231,6 +230,28 @@ def main():
 
     elif key == ord('o'):
       obs = filtered_obs_XYs
+      # hack: ensure obs occurs only on grid
+
+      obs_inds = np.c_[empty_sdf.to_grid_inds(obs[:,0], obs[:,1])].round()
+      print 'grid inds', obs_inds
+      obs = np.c_[empty_sdf.to_world_xys(obs_inds[:,0], obs_inds[:,1])]
+
+      # print 'orig obs', obs
+      # render2d = flatland.Render2d(cam2d.bl, cam2d.tr, cam2d.width)
+      # xys = obs.dot(render2d.P[:2,:2].T) + render2d.P[:2,2]
+      # ixys = xys.astype(int)
+      # pts = []
+      # for ix, iy in ixys:
+      #   if 0 <= iy < render2d.image.shape[0] and 0 <= ix < render2d.image.shape[1]:
+      #     pts.append([ix,iy])
+      # print 'orig pts', pts
+      # pts = np.array(pts)
+      # obs = pts
+      # Pinv = np.linalg.inv(render2d.P)
+      # obs = np.array(pts).dot(Pinv[:2,:2].T) + Pinv[:2,2]
+      # print 'rounded obs', obs
+      # print 'rounded obs inds', empty_sdf.to_grid_inds(obs[:,0], obs[:,1])
+
       tracker.observe(obs)
       tracker.plot()
       print 'observed.'

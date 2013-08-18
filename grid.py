@@ -99,7 +99,13 @@ class SpatialFunction(object):
     assert len(xs) == len(ys)
     ixs = (xs - self.xmin)*(self._f.shape[0] - 1.)/(self.xmax - self.xmin)
     iys = (ys - self.ymin)*(self._f.shape[1] - 1.)/(self.ymax - self.ymin)
+    print ixs, iys
     return ixs, iys
+
+  def to_world_xys(self, ixs, iys):
+    xs = self.xmin + ixs.astype(float)/(self._f.shape[0] - 1.)*(self.xmax - self.xmin)
+    ys = self.ymin + iys.astype(float)/(self._f.shape[1] - 1.)*(self.ymax - self.ymin)
+    return xs, ys
 
   def _eval_inds(self, inds):
     return np.squeeze(grid_interp(self._f, inds))
