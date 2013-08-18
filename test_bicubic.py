@@ -62,25 +62,52 @@ class BicubicInterp(object):
 
   def __init__(self, xmin, xmax, ymin, ymax, data):
     self.xmin, self.xmax, self.ymin, self.ymax = xmin, xmax, ymin, ymax
+    self.eps_x = (self.xmax-self.xmin)/(data.shape[0]-1.)
+    self.eps_y = (self.ymax-self.ymin)/(data.shape[1]-1.)
+
     self.data = data
 
-    self.eps_x = (self.xmax-self.xmin)/(self.data.shape[0]-1.)
-    self.eps_y = (self.ymax-self.ymin)/(self.data.shape[1]-1.)
-    self.data_grad = gradient(self.data, self.eps_x, self.eps_y)
-    self.data_grad_xy = gradient(self.data_grad[:,:,0], self.eps_x, self.eps_y, 'y')
+    self.padded_data = np.empty((data.shape[0]+2, data.shape[1]+2), dtype=data.dtype)
+    self.padded_data[1:-1,1:-1] = data
+    self.padded_data[0,1:-1] = data[0,:]
+    self.padded_data[-1,1:-1] = data[-1,:]
+    self.padded_data[1:-1,0] = data[:,0]
+    self.padded_data[1:-1,-1] = data[:,-1]
+    self.padded_data[0,0] = self.padded_data[0,1]
+    self.padded_data[-1,0] = self.padded_data[-1,1]
+    self.padded_data[0,-1] = self.padded_data[1,-1]
+    self.padded_data[-1,-1] = self.padded_data[-2,-1]
+
+    self.padded_data_grad = gradient(self.padded_data, self.eps_x, self.eps_y)
+    self.padded_data_grad_xy = gradient(self.padded_data_grad[:,:,0], self.eps_x, self.eps_y, 'y')
+
+    #self.data_grad = gradient(self.data, self.eps_x, self.eps_y)
+    #self.data_grad_xy = gradient(self.data_grad[:,:,0], self.eps_x, self.eps_y, 'y')
     #assert np.allclose(self.deriv_xy, gradient(self.data_grad[:,:,1], wrt='x'))
 
     print 'computing interpolation weights'
-    i0 = np.repeat(np.arange(0, self.data.shape[0] - 1), self.data.shape[1] - 1)
-    j0 = np.tile(np.arange(0, self.data.shape[1] - 1), self.data.shape[0] - 1)
+#   i0 = np.repeat(np.arange(0, self.data.shape[0] - 1), self.data.shape[1] - 1)
+#   j0 = np.tile(np.arange(0, self.data.shape[1] - 1), self.data.shape[0] - 1)
+#   i1, j1 = i0 + 1, j0 + 1
+#   X = np.c_[
+#     self.data[i0,j0], self.data[i1,j0], self.data[i0,j1], self.data[i1,j1],
+#     self.data_grad[i0,j0,0], self.data_grad[i1,j0,0], self.data_grad[i0,j1,0], self.data_grad[i1,j1,0],
+#     self.data_grad[i0,j0,1], self.data_grad[i1,j0,1], self.data_grad[i0,j1,1], self.data_grad[i1,j1,1],
+#     self.data_grad_xy[i0,j0], self.data_grad_xy[i1,j0], self.data_grad_xy[i0,j1], self.data_grad_xy[i1,j1]
+#   ]
+#   self.interp_coeffs = X.dot(self.bicubic_Ainv.T).reshape((self.data.shape[0] - 1, self.data.shape[1] - 1, 4, 4)).transpose((0, 1, 3, 2))
+
+    i0 = np.repeat(np.arange(0, self.padded_data.shape[0] - 1), self.padded_data.shape[1] - 1)
+    j0 = np.tile(np.arange(0, self.padded_data.shape[1] - 1), self.padded_data.shape[0] - 1)
     i1, j1 = i0 + 1, j0 + 1
     X = np.c_[
-      self.data[i0,j0], self.data[i1,j0], self.data[i0,j1], self.data[i1,j1],
-      self.data_grad[i0,j0,0], self.data_grad[i1,j0,0], self.data_grad[i0,j1,0], self.data_grad[i1,j1,0],
-      self.data_grad[i0,j0,1], self.data_grad[i1,j0,1], self.data_grad[i0,j1,1], self.data_grad[i1,j1,1],
-      self.data_grad_xy[i0,j0], self.data_grad_xy[i1,j0], self.data_grad_xy[i0,j1], self.data_grad_xy[i1,j1]
+      self.padded_data[i0,j0], self.padded_data[i1,j0], self.padded_data[i0,j1], self.padded_data[i1,j1],
+      self.padded_data_grad[i0,j0,0], self.padded_data_grad[i1,j0,0], self.padded_data_grad[i0,j1,0], self.padded_data_grad[i1,j1,0],
+      self.padded_data_grad[i0,j0,1], self.padded_data_grad[i1,j0,1], self.padded_data_grad[i0,j1,1], self.padded_data_grad[i1,j1,1],
+      self.padded_data_grad_xy[i0,j0], self.padded_data_grad_xy[i1,j0], self.padded_data_grad_xy[i0,j1], self.padded_data_grad_xy[i1,j1]
     ]
-    self.interp_coeffs = X.dot(self.bicubic_Ainv.T).reshape((self.data.shape[0] - 1, self.data.shape[1] - 1, 4, 4)).transpose((0, 1, 3, 2))
+    self.interp_coeffs = X.dot(self.bicubic_Ainv.T).reshape((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1, 4, 4)).transpose((0, 1, 3, 2))
+
 
   def get_grid_coords(self):
     i = np.arange(0, self.data.shape[0], dtype=float)
@@ -99,34 +126,30 @@ class BicubicInterp(object):
     ijs[:,1] = (xys[:,1] - self.ymin)*(self.data.shape[1] - 1.)/(self.ymax - self.ymin)
     return ijs
 
-  def eval_single_ij(self, i, j):
-    i0 = np.clip(int(i), 0, self.data.shape[0]-2)
-    i1 = i0 + 1
-    j0 = np.clip(int(j), 0, self.data.shape[1]-2)
-    j1 = j0 + 1
-    frac_i, frac_j = max(0, min(i-i0, 1)), max(0, min(j-j0, 1))
-
-    basis_i = np.array([1, frac_i, frac_i**2, frac_i**3])
-    basis_j = np.array([1, frac_j, frac_j**2, frac_j**3])
-    val = (self.interp_coeffs[i0,j0,:,:] * basis_i[:,None] * basis_j[None,:]).sum()
-    return val
-
   def eval_ijs(self, ijs):
-    print ijs
     ijs = np.atleast_2d(ijs)
     num_pts = ijs.shape[0]
 
-    int_ijs = ijs.astype(int)
-    i0 = np.clip(int_ijs[:,0], 0, self.data.shape[0]-2)
+    int_ijs = np.floor(ijs).astype(int)
+    if True: # padding?
+      i0 = np.clip(int_ijs[:,0], -1, self.data.shape[0]-1)
+      j0 = np.clip(int_ijs[:,1], -1, self.data.shape[1]-1)
+    else:
+      i0 = np.clip(int_ijs[:,0], 0, self.data.shape[0]-2)
+      j0 = np.clip(int_ijs[:,1], 0, self.data.shape[1]-2)
     i1 = i0 + 1
-    j0 = np.clip(int_ijs[:,1], 0, self.data.shape[1]-2)
     j1 = j0 + 1
     frac_i = np.clip(ijs[:,0] - i0, 0, 1)
     frac_j = np.clip(ijs[:,1] - j0, 0, 1)
 
     basis_i = np.c_[np.ones(num_pts), frac_i, frac_i**2, frac_i**3]
     basis_j = np.c_[np.ones(num_pts), frac_j, frac_j**2, frac_j**3]
-    vals = (self.interp_coeffs[i0,j0,:,:] * basis_i[:,:,None] * basis_j[:,None,:]).sum(axis=1).sum(axis=1)
+
+    if True: # padding?
+      coeffs = self.interp_coeffs[i0+1,j0+1,:,:]
+    else:
+      coeffs = self.interp_coeffs[i0,j0,:,:]
+    vals = (coeffs * basis_i[:,:,None] * basis_j[:,None,:]).sum(axis=1).sum(axis=1)
     return np.squeeze(vals)
 
   def eval_xys(self, xys):
@@ -137,6 +160,10 @@ class BicubicInterp(object):
 if __name__ == '__main__':
   rows, cols = 5, 5
   init_data = np.random.rand(rows, cols)
+# init_data[0,:] = 1
+# init_data[-1,:] = 1
+# init_data[:,0] = 1
+# init_data[:,-1] = 1
   assert np.allclose(np.dstack(np.gradient(init_data)), gradient(init_data, smooth_boundary=False))
   print 'ok'
 
@@ -147,23 +174,22 @@ if __name__ == '__main__':
   from mpl_toolkits.mplot3d import Axes3D
   fig = plt.figure()
 
-  res = 1000
-  for z in np.linspace(-1, 1, 50):
-    plt.plot(np.linspace(-3, 3, res), g.eval_xys(np.c_[z+np.zeros(res), np.linspace(-3, 3, res)]))
-  plt.show()
+# res = 100
+# for z in np.linspace(-3, 3, 300):
+#   plt.plot(np.linspace(-3, 3, res), g.eval_xys(np.c_[z+np.zeros(res), np.linspace(-3, 3, res)]))
+# plt.show()
 
 
 
   #plt.hold(true)
   ax = fig.add_subplot(111, projection='3d')
   assert np.allclose(g.eval_xys(g.get_grid_coords()), init_data.ravel())
-  ax.scatter(g.get_grid_coords()[:,0], g.get_grid_coords()[:,1], g.eval_xys(g.get_grid_coords()))
-  padding = 0
-  res = 50
+  ax.scatter(g.get_grid_coords()[:,0], g.get_grid_coords()[:,1], g.eval_xys(g.get_grid_coords()), s=100)
+  padding = 2
+  res = 100
   X, Y = np.meshgrid(np.linspace(-1-padding, 1+padding, res), np.linspace(-2-padding, 2+padding, res))
   Z = g.eval_xys(np.c_[X.ravel(), Y.ravel()]).reshape(X.shape)
-  print X, Y, Z
-  ax.plot_surface(X, Y, Z, antialiased=False)
+  ax.plot_surface(X, Y, Z, antialiased=False, rstride=1, cstride=1, cmap=cm.hot)
   plt.show()
 
 
@@ -172,4 +198,4 @@ if __name__ == '__main__':
   import sympy
   mat = sympy.symarray('m', (rows, cols))
   sg = BicubicInterp(-1, 1, -2, 2, mat)
-  import IPython; IPython.embed()
+  #import IPython; IPython.embed()
