@@ -7,7 +7,7 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
   Input: u (NxM)
   Output: gradient field (NxMx2) if wrt == 'xy', or just NxM if wrt == 'x' or 'y'
 
-  Like np.gradient, except works with sympy
+  Like np.gradient, except works with ndarrays of Python objects
   '''
   if wrt == 'xy':
     out_shape = u.shape + (2,)

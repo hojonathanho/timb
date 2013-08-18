@@ -21,58 +21,96 @@ def gradient_descent(fn, fn_grad, x0, gtol=1e-5, maxiter=100):
     print 'Terminated due to iteration limit'
   return x
 
-
-
 class GurobiSQP(object):
-  def __init__(self, symbols, obj_convex_fn):
+  def __init__(self, obj_convex_fn):
     '''
     obj_convex_fn: function that takes a point and returns the objective (symbolic expr) convexified around that point
     '''
     self.obj_convex_fn = obj_convex_fn
-
+    #self.name2var = collections.OrderedDict()
     self.model = gurobipy.Model('qp')
-    self.sym2var = collections.OrderedDict()
-    assert len(set(s.name for s in symbols)) == len(symbols)
-    for s in symbols:
-      self.sym2var[s] = self.model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name=s.name)
+
+  def add_vars(self, names):
+    def _add_var(name):
+      return self.model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name=name)
+    vars = np.frompyfunc(_add_var, 1, 1)(names)
     self.model.update()
+    return vars
 
-  def _sympy_to_gurobi(self, expr):
-    if isinstance(expr, sympy.Symbol):
-      return self.sym2var[expr]
-    elif isinstance(expr, sympy.Number):
-      return float(expr)
-    elif isinstance(expr, sympy.Add):
-      return sum(self._sympy_to_gurobi(a) for a in expr.args)
-    elif isinstance(expr, sympy.Mul):
-      acc = 1
-      for a in expr.args:
-        acc *= self._sympy_to_gurobi(a)
-      return acc
-    elif isinstance(expr, sympy.Pow):
-      assert expr.args[1] == 2
-      base = self._sympy_to_gurobi(expr.args[0])
-      return base * base
-    else:
-      raise NotImplementedError('Don\'t know how to convert %s to Gurobi (expr: %s)' % (expr.func, expr))
+#   def go(names):
+#     added_vars = []
+#     for n in names:
+#       v = self.model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name=n)
+#       self.name2var[n] = v
+#       added_vars.append(v)
+#     self.model.update()
+#     return added_vars
 
-  def get_value(self):
-    vals = np.empty(len(self.sym2var))
-    for i, var in enumerate(self.sym2var.itervalues()):
-      vals[i] = var.x
-    return vals
+#   if isinstance(names, np.ndarray):
+#     return np.array(go(names.ravel().tolist()), dtype=object).reshape(names.shape)
+#   return go(names)
 
-  def optimize(self, start_val):
-    val = start_val
+  def get_values(self, vars):
+    return np.frompyfunc(lambda v: v.x, 1, 1)(vars).astype(float)
 
-    sym_convex_obj = self.obj_convex_fn(val)#.expand()
-    convex_obj = self._sympy_to_gurobi(sym_convex_obj)
-    #print 'converted sympy', sym_convex_obj, 'to', convex_obj
-
+  def optimize(self, start_x):
+    x = start_x
+    convex_obj = self.obj_convex_fn(x)
+    #print convex_obj
     self.model.setObjective(convex_obj)
     self.model.optimize()
-    return self.get_value()
 
+
+#class GurobiSQP(object):
+#  def __init__(self, symbols, obj_convex_fn):
+#    '''
+#    obj_convex_fn: function that takes a point and returns the objective (symbolic expr) convexified around that point
+#    '''
+#    self.obj_convex_fn = obj_convex_fn
+#
+#    self.model = gurobipy.Model('qp')
+#    self.sym2var = collections.OrderedDict()
+#    assert len(set(s.name for s in symbols)) == len(symbols)
+#    for s in symbols:
+#      self.sym2var[s] = self.model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name=s.name)
+#    self.model.update()
+#
+#  def _sympy_to_gurobi(self, expr):
+#    if isinstance(expr, sympy.Symbol):
+#      return self.sym2var[expr]
+#    elif isinstance(expr, sympy.Number):
+#      return float(expr)
+#    elif isinstance(expr, sympy.Add):
+#      return sum(self._sympy_to_gurobi(a) for a in expr.args)
+#    elif isinstance(expr, sympy.Mul):
+#      acc = 1
+#      for a in expr.args:
+#        acc *= self._sympy_to_gurobi(a)
+#      return acc
+#    elif isinstance(expr, sympy.Pow):
+#      assert expr.args[1] == 2
+#      base = self._sympy_to_gurobi(expr.args[0])
+#      return base * base
+#    else:
+#      raise NotImplementedError('Don\'t know how to convert %s to Gurobi (expr: %s)' % (expr.func, expr))
+#
+#  def get_value(self):
+#    vals = np.empty(len(self.sym2var))
+#    for i, var in enumerate(self.sym2var.itervalues()):
+#      vals[i] = var.x
+#    return vals
+#
+#  def optimize(self, start_val):
+#    val = start_val
+#
+#    sym_convex_obj = self.obj_convex_fn(val)#.expand()
+#    convex_obj = self._sympy_to_gurobi(sym_convex_obj)
+#    #print 'converted sympy', sym_convex_obj, 'to', convex_obj
+#
+#    self.model.setObjective(convex_obj)
+#    self.model.optimize()
+#    return self.get_value()
+#
 def sym_grad(expr, wrt):
   g = np.empty(len(wrt), dtype=np.object)
   for i, v in enumerate(wrt):
