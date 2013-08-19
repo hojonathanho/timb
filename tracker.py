@@ -5,6 +5,7 @@ import cv2
 from scipy.ndimage.morphology import distance_transform_edt
 import scipy.optimize
 import solvers, grid
+import sqp
 np.set_printoptions(linewidth=10000)
 
 
@@ -20,6 +21,7 @@ class Tracker(object):
     self.prev_sdf = init_sdf.copy()
     self.curr_u = grid.SpatialFunction(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], np.zeros(self.sdf.shape() + (2,)))#+[1,0])
     self.curr_obs = None
+    self.prob = None
 
   def reset_sdf(self, sdf):
     self.sdf = sdf
@@ -60,7 +62,11 @@ class Tracker(object):
     print 'total cost', total
     print 'individual costs', costs
 
-  def optimize(self):
+  def optimize_sqp(self):
+    if self.prob is None:
+      self.prob = sqp.con
+
+  def optimize_gd(self):
     self.prev_sdf = self.sdf
 
     dim_sdf, dim_u = self.sdf.size(), self.curr_u.size()
@@ -109,8 +115,6 @@ class Tracker(object):
     print 'old sdf\n', self.prev_sdf.data()
 
     xopt = scipy.optimize.fmin_cg(func, x0, fprime=func_grad, disp=True, maxiter=10000)
-    # import optimization
-    # xopt = optimization.gradient_descent(func, func_grad, x0, maxiter=1000)
     new_sdf, new_u = vec_to_state(xopt)
 
     print 'Done optimizing.'
@@ -257,7 +261,7 @@ def main():
       print 'observed.'
 
     elif key == ord(' '):
-      tracker.optimize()
+      tracker.optimize_sqp()
       tracker.plot()
 
 if __name__ == '__main__':

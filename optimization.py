@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.optimize as sio
 import gurobipy
-from gurobipy import GRB
 import sympy
 import collections
 import logging
@@ -30,21 +29,18 @@ class CostFunc(object):
   def convex(self, vals): raise NotImplementedError
 
 class GurobiSQP(object):
-  def __init__(self, obj_convex_fn):
-    '''
-    obj_convex_fn: function that takes a point and returns the objective (symbolic expr) convexified around that point
-    '''
-    self.obj_convex_fn = obj_convex_fn
-    self.all_vars, self.varname2ind = [], {}
-    self.costs = []
-    self.model = gurobipy.Model('qp')
-
+  def __init__(self):
+    # Algorithm parameters
     self.init_trust_region_size = .1
     self.trust_shrink_ratio, self.trust_expand_ratio = .1, 1.5
     self.min_trust_region_size = 1e-4
     self.min_approx_improve = 1e-4
     self.improve_ratio_threshold = .25
     self.max_iter = 50
+
+    self.all_vars, self.varname2ind = [], {}
+    self.costs = []
+    self.model = gurobipy.Model('qp')
 
     self.logger = logging.getLogger('sqp')
     self.logger.setLevel(logging.DEBUG)
@@ -56,7 +52,7 @@ class GurobiSQP(object):
   def add_vars(self, names):
     def _add_var(name):
       assert name not in self.varname2ind
-      v = self.model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, name=name)
+      v = self.model.addVar(lb=-gurobipy.GRB.INFINITY, ub=gurobipy.GRB.INFINITY, name=name)
       self.varname2ind[name] = len(self.all_vars)
       self.all_vars.append(v)
       return v
@@ -126,22 +122,26 @@ class GurobiSQP(object):
       curr_iter += 1
       self.logger.info('Starting SQP iteration %d' % curr_iter)
 
-      print 'building obj'
+      self.logger.debug('Convexifying objective')
       curr_convex_obj, curr_convex_obj_detail = self._build_convex_objective(curr_x)
-      print 'setting obj'
+      self.logger.debug('Setting Gurobi objective')
       self.model.setObjective(curr_convex_obj)
-      print 'done'
 
       while trust_region_size >= self.min_trust_region_size:
         self._set_trust_region(trust_region_size, curr_x)
+        self.logger.debug('Solving QP')
         self.model.optimize()
         results['n_qp_solves'] += 1
         # TODO: ERROR CHECK QP
 
+        self.logger.debug('Extracting model values')
         new_x = self._get_curr_var_values(self.all_vars)
+        self.logger.debug('Extracting model costs')
         model_cost, model_cost_detail = self._eval_curr_model_objective(curr_convex_obj_detail)
+        self.logger.debug('Evaluating true objective')
         new_cost, new_cost_detail = self._eval_true_objective(new_x)
         results['n_func_evals'] += 1
+        self.logger.debug('Done')
 
         approx_merit_improve = curr_cost - model_cost
         exact_merit_improve = curr_cost - new_cost

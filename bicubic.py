@@ -32,6 +32,12 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
  
   return g
 
+def jacobian(u, eps_x=1, eps_y=1):
+  out = np.empty((u.shape[0], u.shape[1], 2, 2), dtype=u.dtype)
+  out[:,:,0,:] = gradient(u[:,:,0], eps_x, eps_y, wrt='xy')
+  out[:,:,1,:] = gradient(u[:,:,1], eps_x, eps_y, wrt='xy')
+  return out
+
 class BicubicSurface(object):
 
   bicubic_Ainv = np.array([
@@ -76,9 +82,23 @@ class BicubicSurface(object):
     self.padded_data_grad = gradient(self.padded_data, self.eps_x, self.eps_y)
     self.padded_data_grad_xy = gradient(self.padded_data_grad[:,:,0], self.eps_x, self.eps_y, 'y')
 
-    print 'computing interpolation weights'
-    i0 = np.repeat(np.arange(0, self.padded_data.shape[0] - 1), self.padded_data.shape[1] - 1)
-    j0 = np.tile(np.arange(0, self.padded_data.shape[1] - 1), self.padded_data.shape[0] - 1)
+    #print 'computing interpolation weights'
+    self.interp_coeffs = np.empty((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1, 4, 4), dtype=data.dtype)
+    self.interp_coeffs_computed = np.zeros((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1), dtype=bool)
+
+#   i0 = np.repeat(np.arange(0, self.padded_data.shape[0] - 1), self.padded_data.shape[1] - 1)
+#   j0 = np.tile(np.arange(0, self.padded_data.shape[1] - 1), self.padded_data.shape[0] - 1)
+#   i1, j1 = i0 + 1, j0 + 1
+#   X = np.c_[
+#     self.padded_data[i0,j0], self.padded_data[i1,j0], self.padded_data[i0,j1], self.padded_data[i1,j1],
+#     self.padded_data_grad[i0,j0,0], self.padded_data_grad[i1,j0,0], self.padded_data_grad[i0,j1,0], self.padded_data_grad[i1,j1,0],
+#     self.padded_data_grad[i0,j0,1], self.padded_data_grad[i1,j0,1], self.padded_data_grad[i0,j1,1], self.padded_data_grad[i1,j1,1],
+#     self.padded_data_grad_xy[i0,j0], self.padded_data_grad_xy[i1,j0], self.padded_data_grad_xy[i0,j1], self.padded_data_grad_xy[i1,j1]
+#   ]
+#   self.interp_coeffs = X.dot(self.bicubic_Ainv.T).reshape((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1, 4, 4)).transpose((0, 1, 3, 2))
+
+  def _compute_interp_coeffs_nocache(self, ijs):
+    i0, j0 = ijs[:,0], ijs[:,1]
     i1, j1 = i0 + 1, j0 + 1
     X = np.c_[
       self.padded_data[i0,j0], self.padded_data[i1,j0], self.padded_data[i0,j1], self.padded_data[i1,j1],
@@ -86,7 +106,17 @@ class BicubicSurface(object):
       self.padded_data_grad[i0,j0,1], self.padded_data_grad[i1,j0,1], self.padded_data_grad[i0,j1,1], self.padded_data_grad[i1,j1,1],
       self.padded_data_grad_xy[i0,j0], self.padded_data_grad_xy[i1,j0], self.padded_data_grad_xy[i0,j1], self.padded_data_grad_xy[i1,j1]
     ]
-    self.interp_coeffs = X.dot(self.bicubic_Ainv.T).reshape((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1, 4, 4)).transpose((0, 1, 3, 2))
+    return X.dot(self.bicubic_Ainv.T).reshape((-1, 4, 4)).transpose((0, 2, 1))
+
+  def _compute_interp_coeffs(self, ijs):
+    i0, j0 = ijs[:,0], ijs[:,1]
+    not_computed = np.logical_not(self.interp_coeffs_computed[i0,j0])
+    if not_computed.any():
+      not_computed_ijs = ijs[not_computed,:]
+      new_coeffs = self._compute_interp_coeffs_nocache(not_computed_ijs)
+      self.interp_coeffs[not_computed_ijs[:,0],not_computed_ijs[:,1],:,:] = new_coeffs
+      self.interp_coeffs_computed[not_computed_ijs[:,0],not_computed_ijs[:,1]] = True
+    return self.interp_coeffs[i0,j0]
 
   def get_grid_ijs(self):
     i = np.arange(0, self.nx, dtype=float)
@@ -110,20 +140,20 @@ class BicubicSurface(object):
 
   def eval_ijs(self, ijs):
     ijs = np.atleast_2d(ijs)
-    num_pts = ijs.shape[0]
 
     int_ijs = np.floor(ijs).astype(int)
     i0 = np.clip(int_ijs[:,0], -1, self.nx-1)
     j0 = np.clip(int_ijs[:,1], -1, self.ny-1)
-    i1 = i0 + 1
-    j1 = j0 + 1
     frac_i = np.clip(ijs[:,0] - i0, 0, 1)
     frac_j = np.clip(ijs[:,1] - j0, 0, 1)
 
+    num_pts = ijs.shape[0]
     basis_i = np.c_[np.ones(num_pts), frac_i, frac_i**2, frac_i**3]
     basis_j = np.c_[np.ones(num_pts), frac_j, frac_j**2, frac_j**3]
 
-    coeffs = self.interp_coeffs[i0+1,j0+1,:,:]
+    #coeffs = self.interp_coeffs[i0+1,j0+1,:,:]
+    coeffs = self._compute_interp_coeffs(np.c_[i0+1,j0+1])
+
     vals = (coeffs * basis_i[:,:,None] * basis_j[:,None,:]).sum(axis=1).sum(axis=1)
     return np.squeeze(vals)
 
@@ -131,6 +161,24 @@ class BicubicSurface(object):
     return self.eval_ijs(self.to_ijs(xys))
 
 
+  def grad_ijs(self, ijs):
+    # TODO: analytical
+    delta = 1e-5
+    orig_ijs = np.atleast_2d(ijs)
+    ijs = orig_ijs.copy()
+
+    grads = np.empty((ijs.shape[0], 2), dtype=self.data.dtype)
+    for k in [0, 1]:
+      ijs[:,k] += delta
+      y1 = self.eval_ijs(ijs)
+      ijs[:,k] -= 2.*delta
+      y0 = self.eval_ijs(ijs)
+      ijs[:,k] = orig_ijs[:,k]
+      grads[:,k] = (y1 - y0) / (2.*delta)
+    return grads
+
+  def grad_xys(self, xys):
+    return self.grad_ijs(self.to_ijs(xys))
 
 if __name__ == '__main__':
   np.random.seed(0)
