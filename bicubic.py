@@ -197,7 +197,7 @@ if __name__ == '__main__':
 
   res = 100
   for z in np.linspace(-3, 3, 300):
-    plt.plot(np.linspace(-3, 3, res), g.eval_xys(np.c_[z+np.zeros(res), np.linspace(-3, 3, res)]))
+    plt.plot(np.linspace(-4, 4, res), g.eval_xys(np.c_[z+np.zeros(res), np.linspace(-4, 4, res)]))
   plt.show()
 
 # ax = fig.add_subplot(111, projection='3d')

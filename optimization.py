@@ -28,13 +28,20 @@ class CostFunc(object):
   def eval(self, vals): raise NotImplementedError
   def convex(self, vals): raise NotImplementedError
 
+GurobiSQPResult = collections.namedtuple('GurobiSQPResult', [
+  'status',
+  'info',
+  'x',
+  'cost',
+  'cost_detail',
+])
 class GurobiSQP(object):
   def __init__(self):
     # Algorithm parameters
     self.init_trust_region_size = .1
     self.trust_shrink_ratio, self.trust_expand_ratio = .1, 1.5
     self.min_trust_region_size = 1e-4
-    self.min_approx_improve = 1e-4
+    self.min_approx_improve = 1e-10
     self.improve_ratio_threshold = .25
     self.max_iter = 50
 
@@ -95,6 +102,7 @@ class GurobiSQP(object):
     val = 0
     detail = {}
     for c in self.costs:
+      self.logger.debug(c.get_name())
       v = convex_obj_detail[c.get_name()].getValue()
       detail[c.get_name()] = v
       val += v
@@ -106,12 +114,12 @@ class GurobiSQP(object):
       v.lb, v.ub = float(x) - size, float(x) + size
 
   def optimize(self, start_x):
-    results = {
+    info = {
       'n_qp_solves': 0,
       'n_func_evals': 0,
       'n_iters': 0
     }
-    status = ''
+    status = 'incomplete'
 
     exit = False
     curr_x = start_x
@@ -131,7 +139,7 @@ class GurobiSQP(object):
         self._set_trust_region(trust_region_size, curr_x)
         self.logger.debug('Solving QP')
         self.model.optimize()
-        results['n_qp_solves'] += 1
+        info['n_qp_solves'] += 1
         # TODO: ERROR CHECK QP
 
         self.logger.debug('Extracting model values')
@@ -140,7 +148,7 @@ class GurobiSQP(object):
         model_cost, model_cost_detail = self._eval_curr_model_objective(curr_convex_obj_detail)
         self.logger.debug('Evaluating true objective')
         new_cost, new_cost_detail = self._eval_true_objective(new_x)
-        results['n_func_evals'] += 1
+        info['n_func_evals'] += 1
         self.logger.debug('Done')
 
         approx_merit_improve = curr_cost - model_cost
@@ -190,8 +198,8 @@ class GurobiSQP(object):
         break
 
     assert exit
-    results['n_iters'] = curr_iter
-    return curr_x, curr_cost, curr_cost_detail, results, status
+    info['n_iters'] = curr_iter
+    return GurobiSQPResult(status=status, info=info, x=curr_x, cost=curr_cost, cost_detail=curr_cost_detail)
 
 
 def sym_grad(expr, wrt):
