@@ -14,7 +14,7 @@ from math import sqrt
 WEIGHT_SCALE = 100
 
 def cleanup_grb_linexpr(e, coeff_zero_cutoff=1e-20):
-  var2coeff = collections.defaultdict(float)
+  var2coeff = collections.defaultdict(lambda: 0.)
   for i in range(e.size()):
     var, coeff = e.getVar(i), e.getCoeff(i)
     if abs(coeff) > coeff_zero_cutoff:
@@ -130,19 +130,54 @@ class FlowAgreementCost(optimization.CostFunc):
     return self.coeff * sumsq(phi_vals - flowed_prev_phi)
 
   def convex(self, vals):
-    u0 = vals[:,:,1:]
-    points0 = self.prev_phi_surf.get_grid_xys() - u0.reshape((-1, 2))
-    consts = self.prev_phi_surf.eval_xys(points0).reshape((GRID_NX, GRID_NY))
-    grads = self.prev_phi_surf.grad_xys(points0).reshape((GRID_NX, GRID_NY, 2))
-
-    out = 0
-    for i in range(GRID_NX):
-      for j in range(GRID_NY):
-        diff_u = self.u_vars[i,j,:] - u0[i,j,:]
-        e = self.phi_vars[i,j] - float(consts[i,j]) - grads[i,j,:].dot(diff_u)
-        out += e*e
-    out *= self.coeff
+    x0 = vals.flatten()
+    eps = 1e-5
+    out = self.eval(vals)
+    for i in range(len(x0)):
+      orig = x0[i]
+      x0[i] = orig + eps
+      y1 = self.eval(x0.reshape(vals.shape))
+      x0[i] = orig - eps
+      y0 = self.eval(x0.reshape(vals.shape))
+      x0[i] = orig
+      g = (y1 - y0) / (2.*eps)
+      out += g * (self.all_vars.ravel()[i] - float(orig))
+    out = cleanup_grb_linexpr(out)
     return out
+
+
+# def convex(self, vals):
+#   u0 = vals[:,:,1:]
+#   points0 = self.prev_phi_surf.get_grid_xys() - u0.reshape((-1, 2))
+#   consts = self.prev_phi_surf.eval_xys(points0).reshape((GRID_NX, GRID_NY))
+#   grads = self.prev_phi_surf.grad_xys(points0).reshape((GRID_NX, GRID_NY, 2))
+
+#   out = 0
+#   for i in range(GRID_NX):
+#     for j in range(GRID_NY):
+#       diff_u = self.u_vars[i,j,:] - u0[i,j,:]
+#       e = self.phi_vars[i,j] - float(consts[i,j]) - grads[i,j,:].dot(diff_u)
+#       out += e*e
+#   out *= self.coeff
+
+#   XXXXXXXXXXXXXXXX
+#   phi_vals, u_vals = vals[:,:,0], vals[:,:,1:]
+#   grid_xys = self.prev_phi_surf.get_grid_xys()
+#   flowed_prev_phi = self.prev_phi_surf.eval_xys(grid_xys - u_vals.reshape((-1,2))).reshape(GRID_SHAPE)
+#   diff_vals = phi_vals - flowed_prev_phi
+#   cost_vals = diff_vals ** 2
+#   out = 0.
+#   for i in range(GRID_NX):
+#     for j in range(GRID_NY):
+#       e = 0.
+#       e += float(cost_vals[i,j])
+#       phi_deriv = 1.
+#       u_deriv = grads[i,j]
+#       e += 2.* float(diff_vals[i,j]) * (   phi_deriv*(self.phi_vars[i,j]-float(phi_vals[i,j])) +    u_deriv.dot(self.u_vars[i,j]-u_vals[i,j]) )
+#       out += e
+
+#   out *= self.coeff
+#   return out
 
 class PhiSoftTrustCost(optimization.CostFunc):
   def __init__(self, phi_vars, prev_phi_vals, coeff):
@@ -188,7 +223,7 @@ class TrackingProblem(object):
     self.flow_agree_cost = FlowAgreementCost(self.phi_vars, self.u_vars, None, None)
     self.opt.add_cost(self.flow_agree_cost)
 
-    self.phi_soft_trust_cost = PhiSoftTrustCost(self.phi_vars, None, 1e-5)
+    self.phi_soft_trust_cost = PhiSoftTrustCost(self.phi_vars, np.ones_like(self.phi_vars), 1e-5)
     self.opt.add_cost(self.phi_soft_trust_cost)
 
     self.set_coeffs(flow_norm=.01, flow_rigidity=10, obs=1, flow_agree=1)
@@ -208,7 +243,7 @@ class TrackingProblem(object):
   def set_prev_phi_surf(self, surf):
     self.prev_phi_surf = surf
     self.flow_agree_cost.prev_phi_surf = surf
-    self.phi_soft_trust_cost.prev_phi_vals = surf.data
+    #self.phi_soft_trust_cost.prev_phi_vals = surf.data
 
   def set_obs_points(self, obs_pts):
     self.obs_cost.obs_pts = obs_pts
