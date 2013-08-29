@@ -5,15 +5,7 @@ np.set_printoptions(linewidth=10000)
 SIZE = 4
 WORLD_MIN = (0., 0.)
 WORLD_MAX = (3., 3.)
-PIXEL_AREA = 4./SIZE/SIZE
-PIXEL_SIDE = 2./SIZE
-
-sqp_problem.GRID_NX = SIZE
-sqp_problem.GRID_NY = SIZE
-sqp_problem.GRID_SHAPE = (SIZE, SIZE)
-sqp_problem.GRID_MIN = WORLD_MIN
-sqp_problem.GRID_MAX = WORLD_MAX
-sqp_problem.PIXEL_AREA = PIXEL_AREA
+sqp_problem.Config.set(SIZE, SIZE, WORLD_MIN, WORLD_MAX)
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -39,18 +31,18 @@ def plot_u(u):
 
 def main():
   empty_phi = np.ones((4, 4))
-  # init_phi = np.array([
-  #   [1, 1, 1, 1],
-  #   [1, 0, 0, 1],
-  #   [1, 1, 1, 1],
-  #   [1, 1, 1, 1]
-  # ], dtype=float)
   init_phi = np.array([
-    [1, .5, .5, 1],
-    [.5, 0, 0, .5],
-    [1, .5, .5, 1],
+    [1, 1, 1, 1],
+    [1, 0, 0, 1],
+    [1, 1, 1, 1],
     [1, 1, 1, 1]
   ], dtype=float)
+  # init_phi = np.array([
+  #   [1, .5, .5, 1],
+  #   [.5, 0, 0, .5],
+  #   [1, .5, .5, 1],
+  #   [1, 1, 1, 1]
+  # ], dtype=float)
   # desired_phi_soln = np.array([
   #   [1, 1, 1, 1],
   #   [1, 1, 1, 1],
@@ -60,8 +52,8 @@ def main():
   obs = np.array([
     [0, 0, 0, 0],
     [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 1, 1, 0]
+    [0, 1, 1, 0],
+    [0, 0, 0, 0]
   ], dtype=bool)
   obs_pts = np.transpose(np.nonzero(obs))
 
@@ -72,7 +64,7 @@ def main():
   prob.set_coeffs(flow_norm=0, flow_rigidity=10, obs=1, flow_agree=1)
 
   init_u = np.zeros((4, 4, 2))
-  init_u[:,:,0] = 1
+  init_u[:,:,0] = 1.
   out_phi_surf, out_u = prob.optimize(init_phi, init_u)
   plot_phi(out_phi_surf)
   # plot_u(out_u)

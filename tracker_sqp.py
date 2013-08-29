@@ -11,15 +11,7 @@ np.set_printoptions(linewidth=10000)
 SIZE = 50
 WORLD_MIN = (-1., -1.)
 WORLD_MAX = (1., 1.)
-PIXEL_AREA = 4./SIZE/SIZE
-PIXEL_SIDE = 2./SIZE
-
-sqp_problem.GRID_NX = SIZE
-sqp_problem.GRID_NY = SIZE
-sqp_problem.GRID_SHAPE = (SIZE, SIZE)
-sqp_problem.GRID_MIN = WORLD_MIN
-sqp_problem.GRID_MAX = WORLD_MAX
-sqp_problem.PIXEL_AREA = PIXEL_AREA
+sqp_problem.Config.set(SIZE, SIZE, WORLD_MIN, WORLD_MAX)
 
 def to_image_fmt(mat):
   assert mat.ndim == 2

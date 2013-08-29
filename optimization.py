@@ -40,7 +40,7 @@ class GurobiSQP(object):
     self.init_trust_region_size = .1
     self.trust_shrink_ratio, self.trust_expand_ratio = .1, 1.5
     self.min_trust_region_size = 1e-5
-    self.min_approx_improve = 1e-10
+    self.min_approx_improve = 1e-8
     self.improve_ratio_threshold = .25
     self.max_iter = 1000
 
