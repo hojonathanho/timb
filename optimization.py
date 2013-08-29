@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.optimize as sio
 import gurobipy
-import sympy
 import collections
 import logging
 
@@ -126,8 +125,10 @@ class GurobiSQP(object):
     curr_cost, curr_cost_detail = self._eval_true_objective(start_x)
     curr_iter = 0
     trust_region_size = self.init_trust_region_size
+    costs_over_iters = []
     while True:
       curr_iter += 1
+      costs_over_iters.append(curr_cost)
       self.logger.info('Starting SQP iteration %d' % curr_iter)
 
       self.logger.debug('Convexifying objective')
@@ -199,33 +200,8 @@ class GurobiSQP(object):
 
     assert exit
     info['n_iters'] = curr_iter
+    # import matplotlib.pyplot as plt
+    # fig = plt.figure()
+    # plt.plot(np.arange(len(costs_over_iters)), np.log(costs_over_iters))
+    # plt.show()
     return GurobiSQPResult(status=status, info=info, x=curr_x, cost=curr_cost, cost_detail=curr_cost_detail)
-
-
-def sym_grad(expr, wrt):
-  g = np.empty(len(wrt), dtype=np.object)
-  for i, v in enumerate(wrt):
-    print i, len(wrt)
-    g[i] = expr.diff(v)
-  return g
-
-if __name__ == '__main__':
-  shape = (40, 40)
-  syms = sympy.symarray('m', shape)
-  centers = np.random.rand(*shape)
-  print 'Building objective expr'
-  obj = ((syms - centers)**2).sum()
-  print 'done'
-  import IPython; IPython.embed()
-  opt = GurobiSQP(syms.ravel(), lambda _: obj)
-  result = opt.optimize(start_val=np.zeros(shape).ravel())
-  print result
-  print 'ok?', np.allclose(result.reshape(shape), centers)
-
-
-# s_x = sympy.Symbol('x')
-# s_y = sympy.Symbol('y')
-
-# obj_fn = lambda _: ((s_x - 1)**2 + (s_y + 3)**2)
-# opt = GurobiSQP([s_x, s_y], obj_fn)
-# print opt.optimize(start_val=[0,0])

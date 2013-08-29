@@ -130,54 +130,19 @@ class FlowAgreementCost(optimization.CostFunc):
     return self.coeff * sumsq(phi_vals - flowed_prev_phi)
 
   def convex(self, vals):
-    x0 = vals.flatten()
-    eps = 1e-5
-    out = self.eval(vals)
-    for i in range(len(x0)):
-      orig = x0[i]
-      x0[i] = orig + eps
-      y1 = self.eval(x0.reshape(vals.shape))
-      x0[i] = orig - eps
-      y0 = self.eval(x0.reshape(vals.shape))
-      x0[i] = orig
-      g = (y1 - y0) / (2.*eps)
-      out += g * (self.all_vars.ravel()[i] - float(orig))
-    out = cleanup_grb_linexpr(out)
+    u0 = vals[:,:,1:]
+    points0 = self.prev_phi_surf.get_grid_xys() - u0.reshape((-1, 2))
+    consts = self.prev_phi_surf.eval_xys(points0).reshape((GRID_NX, GRID_NY))
+    grads = self.prev_phi_surf.grad_xys(points0).reshape((GRID_NX, GRID_NY, 2))
+
+    out = 0
+    for i in range(GRID_NX):
+      for j in range(GRID_NY):
+        diff_u = self.u_vars[i,j,:] - u0[i,j,:]
+        e = self.phi_vars[i,j] - float(consts[i,j]) + grads[i,j,:].dot(diff_u)
+        out += e*e
+    out *= self.coeff
     return out
-
-
-# def convex(self, vals):
-#   u0 = vals[:,:,1:]
-#   points0 = self.prev_phi_surf.get_grid_xys() - u0.reshape((-1, 2))
-#   consts = self.prev_phi_surf.eval_xys(points0).reshape((GRID_NX, GRID_NY))
-#   grads = self.prev_phi_surf.grad_xys(points0).reshape((GRID_NX, GRID_NY, 2))
-
-#   out = 0
-#   for i in range(GRID_NX):
-#     for j in range(GRID_NY):
-#       diff_u = self.u_vars[i,j,:] - u0[i,j,:]
-#       e = self.phi_vars[i,j] - float(consts[i,j]) - grads[i,j,:].dot(diff_u)
-#       out += e*e
-#   out *= self.coeff
-
-#   XXXXXXXXXXXXXXXX
-#   phi_vals, u_vals = vals[:,:,0], vals[:,:,1:]
-#   grid_xys = self.prev_phi_surf.get_grid_xys()
-#   flowed_prev_phi = self.prev_phi_surf.eval_xys(grid_xys - u_vals.reshape((-1,2))).reshape(GRID_SHAPE)
-#   diff_vals = phi_vals - flowed_prev_phi
-#   cost_vals = diff_vals ** 2
-#   out = 0.
-#   for i in range(GRID_NX):
-#     for j in range(GRID_NY):
-#       e = 0.
-#       e += float(cost_vals[i,j])
-#       phi_deriv = 1.
-#       u_deriv = grads[i,j]
-#       e += 2.* float(diff_vals[i,j]) * (   phi_deriv*(self.phi_vars[i,j]-float(phi_vals[i,j])) +    u_deriv.dot(self.u_vars[i,j]-u_vals[i,j]) )
-#       out += e
-
-#   out *= self.coeff
-#   return out
 
 class PhiSoftTrustCost(optimization.CostFunc):
   def __init__(self, phi_vars, prev_phi_vals, coeff):
@@ -202,6 +167,7 @@ class PhiSoftTrustCost(optimization.CostFunc):
 
 class TrackingProblem(object):
   def __init__(self): # TODO: put world bounds here
+    self.costs_over_iters = []
     self.opt = optimization.GurobiSQP()
 
     self.phi_names = make_varname_mat('phi', GRID_SHAPE)
@@ -248,9 +214,10 @@ class TrackingProblem(object):
   def set_obs_points(self, obs_pts):
     self.obs_cost.obs_pts = obs_pts
 
-  def optimize(self, init_u_vals):
+  def optimize(self, init_phi_vals, init_u_vals):
     assert init_u_vals.shape == self.u_vars.shape
-    x0 = np.concatenate((self.prev_phi_surf.data.ravel(), init_u_vals.ravel()))
+    #x0 = np.concatenate((self.prev_phi_surf.data.ravel(), init_u_vals.ravel()))
+    x0 = np.concatenate((init_phi_vals.ravel(), init_u_vals.ravel()))
     result = self.opt.optimize(x0)
     print 'Optimization result:\n', result
     phi_len = self.prev_phi_surf.data.size

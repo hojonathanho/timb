@@ -133,6 +133,7 @@ class BicubicSurface(object):
     return xys
 
   def to_ijs(self, xys):
+    xys = np.atleast_2d(xys)
     ijs = np.empty_like(xys)
     ijs[:,0] = (xys[:,0] - self.xmin)*(self.nx - 1.)/(self.xmax - self.xmin)
     ijs[:,1] = (xys[:,1] - self.ymin)*(self.ny - 1.)/(self.ymax - self.ymin)
@@ -169,9 +170,9 @@ class BicubicSurface(object):
 
     grads = np.empty((ijs.shape[0], 2), dtype=self.data.dtype)
     for k in [0, 1]:
-      ijs[:,k] += delta
+      ijs[:,k] = orig_ijs[:,k] + delta
       y1 = self.eval_ijs(ijs)
-      ijs[:,k] -= 2.*delta
+      ijs[:,k] = orig_ijs[:,k] - delta
       y0 = self.eval_ijs(ijs)
       ijs[:,k] = orig_ijs[:,k]
       grads[:,k] = (y1 - y0) / (2.*delta)
