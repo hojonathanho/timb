@@ -67,7 +67,7 @@ def main():
 
   prob = sqp_problem.TrackingProblem()
   prob.set_obs_points(obs_pts)
-  prob.set_prev_phi_surf(sqp_problem.make_bicubic(init_phi))
+  prob.set_prev_phi_surf(sqp_problem.make_interp(init_phi))
 
   prob.set_coeffs(flow_norm=0, flow_rigidity=10, obs=1, flow_agree=1)
 

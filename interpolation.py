@@ -1,5 +1,4 @@
 import numpy as np
-import sympy
 
 def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
   '''
@@ -33,12 +32,143 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
   return g
 
 def jacobian(u, eps_x=1, eps_y=1):
+  '''
+  Jacobians of a vector field
+  '''
   out = np.empty((u.shape[0], u.shape[1], 2, 2), dtype=u.dtype)
   out[:,:,0,:] = gradient(u[:,:,0], eps_x, eps_y, wrt='xy')
   out[:,:,1,:] = gradient(u[:,:,1], eps_x, eps_y, wrt='xy')
   return out
 
-class BicubicSurface(object):
+
+class Surface(object):
+  def __init__(self, xmin, xmax, ymin, ymax, data):
+    assert data.ndim == 2
+
+    self.xmin, self.xmax, self.ymin, self.ymax = xmin, xmax, ymin, ymax
+    self.eps_x = (self.xmax-self.xmin)/(data.shape[0]-1.)
+    self.eps_y = (self.ymax-self.ymin)/(data.shape[1]-1.)
+    self.nx, self.ny = data.shape[0], data.shape[1]
+    self.grid_ijs = np.transpose(np.meshgrid(np.arange(0, self.nx, dtype=float), np.arange(0, self.ny, dtype=float))).reshape((-1, 2))
+
+    self.data = data
+
+  def to_xys(self, ijs):
+    xys = np.empty_like(ijs)
+    xys[:,0] = self.xmin + ijs[:,0]*self.eps_x
+    xys[:,1] = self.ymin + ijs[:,1]*self.eps_y
+    return xys
+
+  def to_ijs(self, xys):
+    xys = np.atleast_2d(xys)
+    ijs = np.empty_like(xys)
+    ijs[:,0] = (xys[:,0] - self.xmin)/self.eps_x
+    ijs[:,1] = (xys[:,1] - self.ymin)/self.eps_y
+    return ijs
+
+  def get_grid_ijs(self):
+    return self.grid_ijs
+
+  def get_grid_xys(self):
+    return self.to_xys(self.get_grid_ijs())
+
+  def eval_ijs(self, ijs):
+    raise NotImplementedError
+
+  def eval_xys(self, xys):
+    return self.eval_ijs(self.to_ijs(xys))
+
+  def grad_ijs(self, ijs, delta=1e-5):
+    orig_ijs = np.atleast_2d(ijs)
+    ijs = orig_ijs.copy()
+
+    grads = np.empty((ijs.shape[0], 2), dtype=self.data.dtype)
+    for k in [0, 1]:
+      ijs[:,k] = orig_ijs[:,k] + delta
+      y1 = self.eval_ijs(ijs)
+      ijs[:,k] = orig_ijs[:,k] - delta
+      y0 = self.eval_ijs(ijs)
+      ijs[:,k] = orig_ijs[:,k]
+      grads[:,k] = (y1 - y0) / (2.*delta)
+    return grads
+
+  def grad_xys(self, xys):
+    return self.grad_ijs(self.to_ijs(xys))
+
+
+
+class BilinearSurface(Surface):
+  def __init__(self, xmin, xmax, ymin, ymax, data):
+    super(BilinearSurface, self).__init__(xmin, xmax, ymin, ymax, data)
+
+  @staticmethod
+  def grid_interp(grid, u):
+    ''' bilinear interpolation '''
+    assert u.shape[-1] == 2 and u.ndim == 2
+    grid = np.atleast_3d(grid)
+
+    ax, ay = np.floor(u[:,0]).astype(int), np.floor(u[:,1]).astype(int)
+    bx, by = ax + 1, ay + 1
+    ax, bx, ay, by = np.clip(ax, 0, grid.shape[0]-1), np.clip(bx, 0, grid.shape[0]-1), np.clip(ay, 0, grid.shape[1]-1), np.clip(by, 0, grid.shape[1]-1)
+
+    # introduce axes into dx, dy to broadcast over all dimensions of output
+    idx = tuple([slice(None)] + [None]*(grid.ndim - 2))
+    dx, dy = np.maximum(u[:,0] - ax, 0)[idx], np.maximum(u[:,1] - ay, 0)[idx]
+
+    out = (1.-dy)*((1.-dx)*grid[ax,ay] + dx*grid[bx,ay]) + dy*((1.-dx)*grid[ax,by] + dx*grid[bx,by])
+
+    assert len(out) == len(u)
+    return out
+
+  @staticmethod
+  def grid_interp_grad_nd(grid, u, eps=1e-5):
+    grid = np.atleast_3d(grid)
+    assert grid.ndim == 3 and grid.shape[2] == 1
+    grid = np.squeeze(grid)
+
+    grads = np.empty((len(u),) + grid.shape)
+    for i in range(grid.shape[0]):
+      for j in range(grid.shape[1]):
+        orig = grid[i,j]
+        grid[i,j] = orig + eps
+        y2 = grid_interp(grid, u)
+        grid[i,j] = orig - eps
+        y1 = grid_interp(grid, u)
+        grid[i,j] = orig
+        grads[:,i,j] = np.squeeze(y2 - y1) / (2.*eps)
+    return grads
+
+  @staticmethod
+  def grid_interp_grad(grid, u):
+    '''gradients of interpolated points with respect to the grid'''
+    grid = np.atleast_3d(grid)
+    assert grid.ndim == 3 and grid.shape[2] == 1
+    grid = np.squeeze(grid)
+
+    ax, ay = np.floor(u[:,0]).astype(int), np.floor(u[:,1]).astype(int)
+    bx, by = ax + 1, ay + 1
+
+    in_range_axay = (ax >= 0) & (ax < grid.shape[0]) & (ay >= 0) & (ay < grid.shape[1])
+    in_range_axby = (ax >= 0) & (ax < grid.shape[0]) & (by >= 0) & (by < grid.shape[1])
+    in_range_bxay = (bx >= 0) & (bx < grid.shape[0]) & (ay >= 0) & (ay < grid.shape[1])
+    in_range_bxby = (bx >= 0) & (bx < grid.shape[0]) & (by >= 0) & (by < grid.shape[1])
+
+    dx, dy = np.maximum(u[:,0] - ax, 0), np.maximum(u[:,1] - ay, 0)
+
+    grads = np.zeros((len(u),) + grid.shape)
+    grads[in_range_axay,ax[in_range_axay],ay[in_range_axay]] = ((1.-dy)*(1.-dx))[in_range_axay]
+    grads[in_range_bxay,bx[in_range_bxay],ay[in_range_bxay]] = ((1.-dy)*dx)[in_range_bxay]
+    grads[in_range_axby,ax[in_range_axby],by[in_range_axby]] = (dy*(1.-dx))[in_range_axby]
+    grads[in_range_bxby,bx[in_range_bxby],by[in_range_bxby]] = (dy*dx)[in_range_bxby]
+
+    return grads
+
+  def eval_ijs(self, ijs):
+    ijs = np.atleast_2d(ijs)
+    return np.squeeze(BilinearSurface.grid_interp(self.data, ijs))
+
+
+class BicubicSurface(Surface):
 
   bicubic_Ainv = np.array([
     [ 1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
@@ -61,12 +191,7 @@ class BicubicSurface(object):
   )
 
   def __init__(self, xmin, xmax, ymin, ymax, data):
-    self.xmin, self.xmax, self.ymin, self.ymax = xmin, xmax, ymin, ymax
-    self.eps_x = (self.xmax-self.xmin)/(data.shape[0]-1.)
-    self.eps_y = (self.ymax-self.ymin)/(data.shape[1]-1.)
-    self.nx, self.ny = data.shape[0], data.shape[1]
-
-    self.data = data
+    super(BicubicSurface, self).__init__(xmin, xmax, ymin, ymax, data)
 
     self.padded_data = np.empty((data.shape[0]+2, data.shape[1]+2), dtype=data.dtype)
     self.padded_data[1:-1,1:-1] = data
@@ -82,20 +207,9 @@ class BicubicSurface(object):
     self.padded_data_grad = gradient(self.padded_data, self.eps_x, self.eps_y)
     self.padded_data_grad_xy = gradient(self.padded_data_grad[:,:,0], self.eps_x, self.eps_y, 'y')
 
-    #print 'computing interpolation weights'
+    # lazily computed interpolation coefficients -- interp_coeffs_computed is the validity mask
     self.interp_coeffs = np.empty((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1, 4, 4), dtype=data.dtype)
     self.interp_coeffs_computed = np.zeros((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1), dtype=bool)
-
-#   i0 = np.repeat(np.arange(0, self.padded_data.shape[0] - 1), self.padded_data.shape[1] - 1)
-#   j0 = np.tile(np.arange(0, self.padded_data.shape[1] - 1), self.padded_data.shape[0] - 1)
-#   i1, j1 = i0 + 1, j0 + 1
-#   X = np.c_[
-#     self.padded_data[i0,j0], self.padded_data[i1,j0], self.padded_data[i0,j1], self.padded_data[i1,j1],
-#     self.padded_data_grad[i0,j0,0], self.padded_data_grad[i1,j0,0], self.padded_data_grad[i0,j1,0], self.padded_data_grad[i1,j1,0],
-#     self.padded_data_grad[i0,j0,1], self.padded_data_grad[i1,j0,1], self.padded_data_grad[i0,j1,1], self.padded_data_grad[i1,j1,1],
-#     self.padded_data_grad_xy[i0,j0], self.padded_data_grad_xy[i1,j0], self.padded_data_grad_xy[i0,j1], self.padded_data_grad_xy[i1,j1]
-#   ]
-#   self.interp_coeffs = X.dot(self.bicubic_Ainv.T).reshape((self.padded_data.shape[0] - 1, self.padded_data.shape[1] - 1, 4, 4)).transpose((0, 1, 3, 2))
 
   def _compute_interp_coeffs_nocache(self, ijs):
     i0, j0 = ijs[:,0], ijs[:,1]
@@ -118,27 +232,6 @@ class BicubicSurface(object):
       self.interp_coeffs_computed[not_computed_ijs[:,0],not_computed_ijs[:,1]] = True
     return self.interp_coeffs[i0,j0]
 
-  def get_grid_ijs(self):
-    i = np.arange(0, self.nx, dtype=float)
-    j = np.arange(0, self.ny, dtype=float)
-    return np.transpose(np.meshgrid(i, j)).reshape((-1, 2))
-
-  def get_grid_xys(self):
-    return self.to_xys(self.get_grid_ijs())
-
-  def to_xys(self, ijs):
-    xys = np.empty_like(ijs)
-    xys[:,0] = self.xmin + ijs[:,0]/(self.nx - 1.)*(self.xmax - self.xmin)
-    xys[:,1] = self.ymin + ijs[:,1]/(self.ny - 1.)*(self.ymax - self.ymin)
-    return xys
-
-  def to_ijs(self, xys):
-    xys = np.atleast_2d(xys)
-    ijs = np.empty_like(xys)
-    ijs[:,0] = (xys[:,0] - self.xmin)*(self.nx - 1.)/(self.xmax - self.xmin)
-    ijs[:,1] = (xys[:,1] - self.ymin)*(self.ny - 1.)/(self.ymax - self.ymin)
-    return ijs
-
   def eval_ijs(self, ijs):
     ijs = np.atleast_2d(ijs)
 
@@ -152,36 +245,14 @@ class BicubicSurface(object):
     basis_i = np.c_[np.ones(num_pts), frac_i, frac_i**2, frac_i**3]
     basis_j = np.c_[np.ones(num_pts), frac_j, frac_j**2, frac_j**3]
 
-    #coeffs = self.interp_coeffs[i0+1,j0+1,:,:]
     coeffs = self._compute_interp_coeffs(np.c_[i0+1,j0+1])
 
     vals = (coeffs * basis_i[:,:,None] * basis_j[:,None,:]).sum(axis=1).sum(axis=1)
     return np.squeeze(vals)
 
-  def eval_xys(self, xys):
-    return self.eval_ijs(self.to_ijs(xys))
 
 
-  def grad_ijs(self, ijs):
-    # TODO: analytical
-    delta = 1e-5
-    orig_ijs = np.atleast_2d(ijs)
-    ijs = orig_ijs.copy()
-
-    grads = np.empty((ijs.shape[0], 2), dtype=self.data.dtype)
-    for k in [0, 1]:
-      ijs[:,k] = orig_ijs[:,k] + delta
-      y1 = self.eval_ijs(ijs)
-      ijs[:,k] = orig_ijs[:,k] - delta
-      y0 = self.eval_ijs(ijs)
-      ijs[:,k] = orig_ijs[:,k]
-      grads[:,k] = (y1 - y0) / (2.*delta)
-    return grads
-
-  def grad_xys(self, xys):
-    return self.grad_ijs(self.to_ijs(xys))
-
-if __name__ == '__main__':
+def demo_bicubic():
   np.random.seed(0)
 
   rows, cols = 5, 5
@@ -211,7 +282,5 @@ if __name__ == '__main__':
 # ax.plot_surface(X, Y, Z, antialiased=False, rstride=1, cstride=1, cmap=cm.hot)
 # plt.show()
 
-  import sympy
-  mat = sympy.symarray('m', (rows, cols))
-  sg = BicubicSurface(-1, 1, -2, 2, mat)
-  import IPython; IPython.embed()
+if __name__ == '__main__':
+  demo_bicubic()

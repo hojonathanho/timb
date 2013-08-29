@@ -1,7 +1,7 @@
 import numpy as np
 import optimization
 import time
-from bicubic import gradient, jacobian, BicubicSurface
+from interpolation import gradient, jacobian, BilinearSurface, BicubicSurface
 import collections
 from math import sqrt
 
@@ -25,8 +25,8 @@ def cleanup_grb_linexpr(e, coeff_zero_cutoff=1e-20):
     out += coeff*var
   return out
 
-def make_bicubic(mat):
-  return BicubicSurface(GRID_MIN[0], GRID_MAX[0], GRID_MIN[1], GRID_MAX[1], mat)
+def make_interp(mat):
+  return BilinearSurface(GRID_MIN[0], GRID_MAX[0], GRID_MIN[1], GRID_MAX[1], mat)
 
 def make_varname_mat(prefix, shape):
   import itertools
@@ -92,19 +92,19 @@ class FlowRigidityCost(optimization.CostFunc):
 class ObservationCost(optimization.CostFunc):
   def __init__(self, phi_vars, obs_pts, coeff):
     self.phi_vars, self.obs_pts, self.coeff = phi_vars, obs_pts, coeff
-    self.phi_var_grid = make_bicubic(self.phi_vars)
+    self.phi_var_grid = make_interp(self.phi_vars)
 
   def get_vars(self): return self.phi_vars
   def get_name(self): return 'obs'
 
   def eval(self, vals):
-    surf = make_bicubic(vals) # TODO: cache
+    surf = make_interp(vals) # TODO: cache
     vals_at_obs = surf.eval_xys(self.obs_pts)
     return self.coeff * sumsq(vals_at_obs)
 
   def convex(self, vals):
     out = 0
-    surf = make_bicubic(vals) # TODO: cache
+    surf = make_interp(vals) # TODO: cache
     exprs = self.phi_var_grid.eval_xys(self.obs_pts)
     for e in exprs:
       e_clean = cleanup_grb_linexpr(e)
@@ -175,7 +175,7 @@ class TrackingProblem(object):
     self.phi_vars = self.opt.add_vars(self.phi_names)
     self.u_vars = self.opt.add_vars(self.u_names)
 
-    self.prev_phi_surf = make_bicubic(np.ones(GRID_SHAPE))
+    self.prev_phi_surf = make_interp(np.ones(GRID_SHAPE))
 
     self.flow_norm_cost = FlowNormCost(self.u_vars, None)
     self.opt.add_cost(self.flow_norm_cost)
@@ -222,7 +222,7 @@ class TrackingProblem(object):
     print 'Optimization result:\n', result
     phi_len = self.prev_phi_surf.data.size
     result_phi, result_u = result.x[:phi_len].reshape(GRID_SHAPE), result.x[phi_len:].reshape(GRID_SHAPE + (2,))
-    return make_bicubic(result_phi), result_u
+    return make_interp(result_phi), result_u
 
   #opt.obj_convex_fn = lambda _: sumsq(phi_vars) + sumsq(u_vars)
 

@@ -27,7 +27,7 @@ def to_image_fmt(mat):
 
 class Tracker(object):
   def __init__(self, init_phi):
-    self.phi_surf = sqp_problem.make_bicubic(init_phi)
+    self.phi_surf = sqp_problem.make_interp(init_phi)
     self.curr_u = np.zeros(sqp_problem.GRID_SHAPE + (2,))
     self.curr_obs = None
     self.prob = None
