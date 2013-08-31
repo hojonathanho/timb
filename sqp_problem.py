@@ -31,7 +31,7 @@ def cleanup_grb_linexpr(e, coeff_zero_cutoff=1e-20):
   return out
 
 def make_interp(mat):
-  return BilinearSurface(Config.GRID_MIN[0], Config.GRID_MAX[0], Config.GRID_MIN[1], Config.GRID_MAX[1], mat)
+  return BicubicSurface(Config.GRID_MIN[0], Config.GRID_MAX[0], Config.GRID_MIN[1], Config.GRID_MAX[1], mat)
 
 def make_varname_mat(prefix, shape):
   import itertools
@@ -43,15 +43,15 @@ def make_varname_mat(prefix, shape):
 def sumsq(a):
   return (a**2).sum()
 
-class TestCost(optimization.CostFunc):
-  a = 3
-  def __init__(self, u_vars, coeff):
-    self.u_vars = u_vars
-    self.coeff = coeff
-  def get_vars(self): return self.u_vars
-  def get_name(self): return 'test'
-  def eval(self, vals): return self.coeff * ((vals-self.a)**4).sum()
-  def convex(self, vals): return self.coeff * (( -vals**2 + self.a**2 + (2*vals-2*self.a)*self.u_vars   )**2).sum()
+# class TestCost(optimization.CostFunc):
+#   a = 3
+#   def __init__(self, u_vars, coeff):
+#     self.u_vars = u_vars
+#     self.coeff = coeff
+#   def get_vars(self): return self.u_vars
+#   def get_name(self): return 'test'
+#   def eval(self, vals): return self.coeff * ((vals-self.a)**4).sum()
+#   def convex(self, vals): return self.coeff * (( -vals**2 + self.a**2 + (2*vals-2*self.a)*self.u_vars   )**2).sum()
 
 
 class FlowNormCost(optimization.CostFunc):
@@ -170,6 +170,40 @@ class PhiSoftTrustCost(optimization.CostFunc):
     out *= self.coeff
     return out
 
+class PhiTPSCost(optimization.CostFunc):
+  def __init__(self, phi_vars, eps_x, eps_y, coeff):
+    self.phi_vars, self.eps_x, self.eps_y, self.coeff = phi_vars, eps_x, eps_y, coeff
+
+  def get_vars(self): return self.phi_vars
+  def get_name(self): return 'phi_tps'
+
+  def eval(self, phi_vals):
+    # TODO: vectorize, add boundary terms
+    out = 0
+    for i in range(1, Config.GRID_NX-1):
+      for j in range(1, Config.GRID_NY-1):
+        dx = (phi_vals[i-1,j] - 2.*phi_vals[i,j] + phi_vals[i+1,j]) / (self.eps_x**2)
+        out += dx*dx
+        dy = (phi_vals[i,j-1] - 2.*phi_vals[i,j] + phi_vals[i,j+1]) / (self.eps_y**2)
+        out += dy*dy
+        dxy = (phi_vals[i+1,j+1] - phi_vals[i+1,j-1] - phi_vals[i-1,j+1] + phi_vals[i-1,j-1]) / (4.*self.eps_x*self.eps_y)
+        out += 2.*dxy*dxy
+    out *= self.coeff
+    return out
+
+  def convex(self, phi_vals):
+    out = 0
+    for i in range(1, Config.GRID_NX-1):
+      for j in range(1, Config.GRID_NY-1):
+        dx = (self.phi_vars[i-1,j] - 2.*self.phi_vars[i,j] + self.phi_vars[i+1,j]) / (self.eps_x**2)
+        out += dx*dx
+        dy = (self.phi_vars[i,j-1] - 2.*self.phi_vars[i,j] + self.phi_vars[i,j+1]) / (self.eps_y**2)
+        out += dy*dy
+        dxy = (self.phi_vars[i+1,j+1] - self.phi_vars[i+1,j-1] - self.phi_vars[i-1,j+1] + self.phi_vars[i-1,j-1]) / (4.*self.eps_x*self.eps_y)
+        out += 2.*dxy*dxy
+    out *= self.coeff
+    return out
+
 class TrackingProblem(object):
   def __init__(self): # TODO: put world bounds here
     self.costs_over_iters = []
@@ -194,10 +228,13 @@ class TrackingProblem(object):
     self.flow_agree_cost = FlowAgreementCost(self.phi_vars, self.u_vars, None, None)
     self.opt.add_cost(self.flow_agree_cost)
 
-    self.phi_soft_trust_cost = PhiSoftTrustCost(self.phi_vars, np.ones_like(self.phi_vars), 1e-5)
-    self.opt.add_cost(self.phi_soft_trust_cost)
+    # self.phi_soft_trust_cost = PhiSoftTrustCost(self.phi_vars, np.ones_like(self.phi_vars), 1e-9)
+    # self.opt.add_cost(self.phi_soft_trust_cost)
 
-    self.set_coeffs(flow_norm=.01, flow_rigidity=10, obs=1, flow_agree=1)
+    # self.phi_tps_cost = PhiTPSCost(self.phi_vars, self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, 1e-9)
+    # self.opt.add_cost(self.phi_tps_cost)
+
+    self.set_coeffs(flow_norm=0, flow_rigidity=10, obs=1, flow_agree=1)
 
 
   def set_coeffs(self, flow_norm=None, flow_rigidity=None, obs=None, flow_agree=None):
@@ -214,12 +251,12 @@ class TrackingProblem(object):
   def set_prev_phi_surf(self, surf):
     self.prev_phi_surf = surf
     self.flow_agree_cost.prev_phi_surf = surf
-    #self.phi_soft_trust_cost.prev_phi_vals = surf.data
+    # self.phi_soft_trust_cost.prev_phi_vals = surf.data
 
   def set_obs_points(self, obs_pts):
     self.obs_cost.obs_pts = obs_pts
 
-  def optimize(self, init_phi_vals, init_u_vals):
+  def optimize(self, init_phi_vals, init_u_vals, return_opt_result=False):
     assert init_u_vals.shape == self.u_vars.shape
     #x0 = np.concatenate((self.prev_phi_surf.data.ravel(), init_u_vals.ravel()))
     x0 = np.concatenate((init_phi_vals.ravel(), init_u_vals.ravel()))
@@ -227,6 +264,8 @@ class TrackingProblem(object):
     print 'Optimization result:\n', result
     phi_len = self.prev_phi_surf.data.size
     result_phi, result_u = result.x[:phi_len].reshape(Config.GRID_SHAPE), result.x[phi_len:].reshape(Config.GRID_SHAPE + (2,))
+    if return_opt_result:
+      return make_interp(result_phi), result_u, result
     return make_interp(result_phi), result_u
 
   #opt.obj_convex_fn = lambda _: sumsq(phi_vars) + sumsq(u_vars)

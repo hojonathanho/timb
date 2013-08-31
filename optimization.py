@@ -33,23 +33,26 @@ GurobiSQPResult = collections.namedtuple('GurobiSQPResult', [
   'x',
   'cost',
   'cost_detail',
+  'x_over_iters',
+  'costs_over_iters',
 ])
 class GurobiSQP(object):
   def __init__(self):
     # Algorithm parameters
-    self.init_trust_region_size = .1
-    self.trust_shrink_ratio, self.trust_expand_ratio = .1, 1.5
-    self.min_trust_region_size = 1e-5
-    self.min_approx_improve = 1e-8
+    self.init_trust_region_size = 1.
+    self.trust_shrink_ratio, self.trust_expand_ratio = .1, 2.
+    self.min_trust_region_size = 1e-4
+    self.min_approx_improve = 1e-5
     self.improve_ratio_threshold = .25
-    self.max_iter = 1000
+    self.max_iter = 100
 
     self.all_vars, self.varname2ind = [], {}
     self.costs = []
     self.model = gurobipy.Model('qp')
+    self.model.setParam('OutputFlag', False)
 
     self.logger = logging.getLogger('sqp')
-    self.logger.setLevel(logging.DEBUG)
+    self.logger.setLevel(logging.INFO)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(logging.Formatter('>>>>> %(name)s - %(levelname)s - %(message)s'))
@@ -125,10 +128,11 @@ class GurobiSQP(object):
     curr_cost, curr_cost_detail = self._eval_true_objective(start_x)
     curr_iter = 0
     trust_region_size = self.init_trust_region_size
-    costs_over_iters = []
+    costs_over_iters, x_over_iters = [], []
     while True:
       curr_iter += 1
       costs_over_iters.append(curr_cost)
+      #x_over_iters.append(curr_x)
       self.logger.info('Starting SQP iteration %d' % curr_iter)
 
       self.logger.debug('Convexifying objective')
@@ -173,8 +177,6 @@ class GurobiSQP(object):
 
         merit_improve_ratio = exact_merit_improve / approx_merit_improve
         if exact_merit_improve < 0 or merit_improve_ratio < self.improve_ratio_threshold:
-          print exact_merit_improve
-          print merit_improve_ratio, self.improve_ratio_threshold
           trust_region_size *= self.trust_shrink_ratio
           self.logger.info("shrunk trust region. new box size: %.4f" % trust_region_size)
         else:
@@ -200,8 +202,10 @@ class GurobiSQP(object):
 
     assert exit
     info['n_iters'] = curr_iter
+    costs_over_iters.append(curr_cost)
+    x_over_iters.append(curr_x)
     # import matplotlib.pyplot as plt
     # fig = plt.figure()
     # plt.plot(np.arange(len(costs_over_iters)), np.log(costs_over_iters))
     # plt.show()
-    return GurobiSQPResult(status=status, info=info, x=curr_x, cost=curr_cost, cost_detail=curr_cost_detail)
+    return GurobiSQPResult(status=status, info=info, x=curr_x, cost=curr_cost, cost_detail=curr_cost_detail, x_over_iters=x_over_iters, costs_over_iters=costs_over_iters)

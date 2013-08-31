@@ -28,7 +28,7 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
     g_y[:,0] = (u[:,1] - u[:,0]) / eps_y
     g_y[:,1:-1] = (u[:,2:] - u[:,:-2]) / (2.*eps_y)
     g_y[:,-1] = (u[:,-1] - u[:,-2]) / eps_y
- 
+
   return g
 
 def jacobian(u, eps_x=1, eps_y=1):
