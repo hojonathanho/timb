@@ -49,11 +49,15 @@ class Surface(object):
     self.eps_x = (self.xmax-self.xmin)/(data.shape[0]-1.)
     self.eps_y = (self.ymax-self.ymin)/(data.shape[1]-1.)
     self.nx, self.ny = data.shape[0], data.shape[1]
-    self.grid_ijs = np.transpose(np.meshgrid(np.arange(0, self.nx, dtype=float), np.arange(0, self.ny, dtype=float))).reshape((-1, 2))
+
+    x, y = np.arange(0, self.nx, dtype=float), np.arange(0, self.ny, dtype=float)
+    self.grid_ijs = np.c_[np.repeat(x, self.ny), np.tile(y, self.nx)]
+    #self.grid_ijs = np.transpose(np.meshgrid(np.arange(0, self.nx, dtype=float), np.arange(0, self.ny, dtype=float))).reshape((-1, 2))
 
     self.data = data
 
   def to_xys(self, ijs):
+    ijs = np.atleast_2d(ijs)
     xys = np.empty_like(ijs)
     xys[:,0] = self.xmin + ijs[:,0]*self.eps_x
     xys[:,1] = self.ymin + ijs[:,1]*self.eps_y

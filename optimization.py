@@ -20,6 +20,27 @@ def gradient_descent(fn, fn_grad, x0, gtol=1e-5, maxiter=100):
     print 'Terminated due to iteration limit'
   return x
 
+import time
+class Timer(object):
+  def __init__(self):
+    self.times = collections.defaultdict(float)
+    self.curr = {}
+
+  def start(self, name):
+    assert name not in self.curr
+    self.curr[name] = time.time()
+
+  def end(self, name):
+    assert name in self.curr
+    self.times[name] += time.time() - self.curr[name]
+    del self.curr[name]
+
+  def display(self):
+    print 'Timing information:'
+    total = sum(self.times.values())
+    for name, t in self.times.iteritems():
+      print '\t%s:\t%f (%f%%)' % (name, t, 100.*t/total)
+    print '\tTotal:\t%f' % total
 
 class CostFunc(object):
   def get_name(self): raise NotImplementedError
@@ -42,21 +63,25 @@ class GurobiSQP(object):
     self.init_trust_region_size = 1.
     self.trust_shrink_ratio, self.trust_expand_ratio = .1, 2.
     self.min_trust_region_size = 1e-4
-    self.min_approx_improve = 1e-5
+    self.min_approx_improve = 1e-3
     self.improve_ratio_threshold = .25
-    self.max_iter = 100
+    self.max_iter = 3
 
-    self.all_vars, self.varname2ind = [], {}
+    self.all_vars, self.varname2ind, self.input_var_ordering = [], {}, None
     self.costs = []
     self.model = gurobipy.Model('qp')
     self.model.setParam('OutputFlag', False)
 
+    self.callbacks = []
+
     self.logger = logging.getLogger('sqp')
     self.logger.setLevel(logging.INFO)
     ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    ch.setFormatter(logging.Formatter('>>>>> %(name)s - %(levelname)s - %(message)s'))
+    # ch.setLevel(logging.DEBUG)
+    ch.setFormatter(logging.Formatter('>>> %(name)s - %(levelname)s - %(message)s'))
     self.logger.addHandler(ch)
+
+    self.timer = Timer()
 
   def add_vars(self, names):
     def _add_var(name):
@@ -115,7 +140,19 @@ class GurobiSQP(object):
     for v, x in zip(self.all_vars, x0):
       v.lb, v.ub = float(x) - size, float(x) + size
 
+  def add_callback(self, cb):
+    self.callbacks.append(cb)
+
+  def declare_input_var_ordering(self, vars):
+    self.input_var_ordering = np.array([self.varname2ind[v.varName] for v in vars], dtype=int)
+    print self.input_var_ordering
+    assert len(set(self.input_var_ordering)) == len(self.all_vars)
+
   def optimize(self, start_x):
+    assert self.input_var_ordering is not None
+    assert (self.input_var_ordering == np.sort(self.input_var_ordering)).all() # TODO: implement reordering
+    #start_x = np.asarray(start_x)[self.input_var_ordering]
+
     info = {
       'n_qp_solves': 0,
       'n_func_evals': 0,
@@ -130,23 +167,33 @@ class GurobiSQP(object):
     trust_region_size = self.init_trust_region_size
     costs_over_iters, x_over_iters = [], []
     while True:
+
+      curr_result = GurobiSQPResult(status=status, info=info, x=curr_x, cost=curr_cost, cost_detail=curr_cost_detail, x_over_iters=x_over_iters, costs_over_iters=costs_over_iters)
+      for cb in self.callbacks:
+        cb(curr_result)
+
       curr_iter += 1
       costs_over_iters.append(curr_cost)
-      #x_over_iters.append(curr_x)
+      x_over_iters.append(curr_x)
       self.logger.info('Starting SQP iteration %d' % curr_iter)
 
       self.logger.debug('Convexifying objective')
+      self.timer.start('convexify')
       curr_convex_obj, curr_convex_obj_detail = self._build_convex_objective(curr_x)
       self.logger.debug('Setting Gurobi objective')
       self.model.setObjective(curr_convex_obj)
+      self.timer.end('convexify')
 
       while trust_region_size >= self.min_trust_region_size:
         self._set_trust_region(trust_region_size, curr_x)
         self.logger.debug('Solving QP')
+        self.timer.start('solve_qp')
         self.model.optimize()
+        self.timer.end('solve_qp')
         info['n_qp_solves'] += 1
         # TODO: ERROR CHECK QP
 
+        self.timer.start('extract')
         self.logger.debug('Extracting model values')
         new_x = self._get_curr_var_values(self.all_vars)
         self.logger.debug('Extracting model costs')
@@ -155,6 +202,7 @@ class GurobiSQP(object):
         new_cost, new_cost_detail = self._eval_true_objective(new_x)
         info['n_func_evals'] += 1
         self.logger.debug('Done')
+        self.timer.end('extract')
 
         approx_merit_improve = curr_cost - model_cost
         exact_merit_improve = curr_cost - new_cost
@@ -208,4 +256,5 @@ class GurobiSQP(object):
     # fig = plt.figure()
     # plt.plot(np.arange(len(costs_over_iters)), np.log(costs_over_iters))
     # plt.show()
+    self.timer.display()
     return GurobiSQPResult(status=status, info=info, x=curr_x, cost=curr_cost, cost_detail=curr_cost_detail, x_over_iters=x_over_iters, costs_over_iters=costs_over_iters)
