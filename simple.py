@@ -3,7 +3,7 @@ import sqp_problem
 import scipy.ndimage as sn
 np.set_printoptions(linewidth=10000)
 
-SIZE = 30
+SIZE = 50
 WORLD_MIN = (0., 0.)
 WORLD_MAX = (SIZE-1., SIZE-1.)
 sqp_problem.Config.set(SIZE, SIZE, WORLD_MIN, WORLD_MAX)
@@ -274,10 +274,10 @@ def simple():
   # init_phi_observed = smooth(init_phi_observed)
 
 
-  new_phi_observed = init_phi_observed; new_phi_observed[int(SIZE/2.),int(SIZE/10.):-int(SIZE/10.)] = 0.
+  # new_phi_observed = init_phi_observed; new_phi_observed[int(SIZE/2.),int(SIZE/10.):-int(SIZE/10.)] = 0.
   # new_phi_observed = sn.interpolation.zoom(init_phi_observed, 1.2, cval=1., order=0)
-  # new_phi_observed = sn.interpolation.shift(init_phi_observed, [0,-2], cval=1., order=0)
-  # new_phi_observed = sn.interpolation.rotate(init_phi_observed, 5., cval=1., order=0)
+  # new_phi_observed = sn.interpolation.shift(init_phi_observed, [2,0], cval=1., order=0)
+  new_phi_observed = sn.interpolation.rotate(init_phi_observed, 5., cval=1., order=0)
   # plt.imshow(new_phi_observed, cmap=cm.Greys_r)
   # plt.show()
   obs_pts = np.transpose(np.nonzero(new_phi_observed == 0))
@@ -286,7 +286,7 @@ def simple():
   prob.set_obs_points(obs_pts)
   prob.set_prev_phi(init_phi)
 
-  prob.set_coeffs(flow_norm=1e-9, flow_rigidity=1e-8, flow_tps=1e-5, obs=1, flow_agree=1)
+  prob.set_coeffs(flow_norm=1e-9, flow_rigidity=1e-3, flow_tps=0, obs=1, flow_agree=1)
 
   init_u = np.zeros(init_phi.shape + (2,))
   #init_u[:,:,0] = 1.
@@ -307,7 +307,7 @@ def simple():
     ax = fig.add_subplot(224)
     ax.plot(np.arange(len(opt_result.costs_over_iters)), opt_result.costs_over_iters)
 
-    out_phi = reintegrate(out_phi)
+    #out_phi = reintegrate(out_phi)
     plot_phi(223, sqp_problem.make_interp(out_phi))
     plot_u(222, out_u)
 
@@ -332,4 +332,4 @@ def simple():
   #   plt.show()
 
 if __name__ == '__main__':
-  rotate_full_obs()
+  simple()

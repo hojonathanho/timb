@@ -1,6 +1,6 @@
 import numpy as np
 
-def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
+def gradient(u, eps_x=1., eps_y=1., wrt='xy', one_sided=True):
   '''
   Gradients of scalar field
   Input: u (NxM)
@@ -19,19 +19,28 @@ def gradient(u, eps_x=1, eps_y=1, wrt='xy'):
 
   if wrt != 'y':
     g_x = g[:,:,0] if wrt == 'xy' else g
-    g_x[0,:] = (u[1,:] - u[0,:]) / eps_x
-    g_x[1:-1,:] = (u[2:,:] - u[:-2,:]) / (2.*eps_x)
-    g_x[-1,:] = (u[-1,:] - u[-2,:]) / eps_x
+    if one_sided:
+      print 'one-sided'
+      g_x[:-1,:] = (u[1:,:] - u[:-1,:]) / eps_x
+      g_x[-1,:] = (u[-1,:] - u[-2,:]) / eps_x
+    else:
+      g_x[0,:] = (u[1,:] - u[0,:]) / eps_x
+      g_x[1:-1,:] = (u[2:,:] - u[:-2,:]) / (2.*eps_x)
+      g_x[-1,:] = (u[-1,:] - u[-2,:]) / eps_x
 
   if wrt != 'x':
     g_y = g[:,:,1] if wrt == 'xy' else g
-    g_y[:,0] = (u[:,1] - u[:,0]) / eps_y
-    g_y[:,1:-1] = (u[:,2:] - u[:,:-2]) / (2.*eps_y)
-    g_y[:,-1] = (u[:,-1] - u[:,-2]) / eps_y
+    if one_sided:
+      g_y[:,:-1] = (u[:,1:] - u[:,:-1]) / eps_y
+      g_y[:,-1] = (u[:,-1] - u[:,-2]) / eps_y
+    else:
+      g_y[:,0] = (u[:,1] - u[:,0]) / eps_y
+      g_y[:,1:-1] = (u[:,2:] - u[:,:-2]) / (2.*eps_y)
+      g_y[:,-1] = (u[:,-1] - u[:,-2]) / eps_y
 
   return g
 
-def jacobian(u, eps_x=1, eps_y=1):
+def jacobian(u, eps_x=1., eps_y=1.):
   '''
   Jacobians of a vector field
   '''

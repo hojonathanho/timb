@@ -63,9 +63,9 @@ class GurobiSQP(object):
     self.init_trust_region_size = 1.
     self.trust_shrink_ratio, self.trust_expand_ratio = .1, 2.
     self.min_trust_region_size = 1e-4
-    self.min_approx_improve = 1e-3
+    self.min_approx_improve = 1e-6
     self.improve_ratio_threshold = .25
-    self.max_iter = 3
+    self.max_iter = 50
 
     self.all_vars, self.varname2ind, self.input_var_ordering = [], {}, None
     self.costs = []

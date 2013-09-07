@@ -155,9 +155,6 @@ class FlowAgreementCost(optimization.CostFunc):
     grid_xys = self.prev_phi_surf.get_grid_xys()
     flowed_prev_phi = self.prev_phi_surf.eval_xys(grid_xys - u_vals.reshape((-1,2))).reshape(Config.GRID_SHAPE)
     return self.coeff * sumsq(phi_vals - flowed_prev_phi)
-    # phi_surf = make_interp(phi_vals)
-    # unflowed_phi = phi_surf.eval_xys(grid_xys + u_vals.reshape((-1,2))).reshape(Config.GRID_SHAPE)
-    # return self.coeff * sumsq(unflowed_phi - self.prev_phi_surf.data)
 
   def convex(self, vals):
     u0 = vals[:,:,1:]
@@ -174,51 +171,66 @@ class FlowAgreementCost(optimization.CostFunc):
     out *= self.coeff
     return out
 
-    # phi0, u0 = vals[:,:,0], vals[:,:,1:]
-    # phi0_surf = make_interp(phi0)
-    # points0 = self.prev_phi_surf.get_grid_xys() - u0.reshape((-1, 2))
-    # consts = self.prev_phi_surf.eval_xys(points0).reshape((Config.GRID_NX, Config.GRID_NY))
-    # grads = self.prev_phi_surf.grad_xys(points0).reshape((Config.GRID_NX, Config.GRID_NY, 2))
-    # out = 0
-    # for i in range(Config.GRID_NX):
-    #   for j in range(Config.GRID_NY):
-    #     e = -self.prev_phi_surf.data[i,j]
-        
-    #     grid_xy = phi0_surf.to_xys([i,j])[0]
-    #     e += phi0_surf.eval_xys(grid_xy + u0[i,j,:])
-    #     e += 
 
 
-    #     diff_u = self.u_vars[i,j,:] - u0[i,j,:]
-    #     e = self.phi_vars[i,j] - float(consts[i,j]) + grads[i,j,:].dot(diff_u)
-    #     out += e*e
-    # out *= self.coeff
-    # return out
+# class PhiSoftTrustCost(optimization.CostFunc):
+#   def __init__(self, phi_vars, prev_phi_vals, coeff):
+#     self.phi_vars, self.prev_phi_vals, self.coeff = phi_vars, prev_phi_vals, coeff
 
+#   def get_vars(self): return self.phi_vars
+#   def get_name(self): return 'phi_soft_trust'
 
+#   def eval(self, vals):
+#     phi_vals = vals
+#     assert phi_vals.shape == self.prev_phi_vals.shape
+#     return self.coeff * sumsq(phi_vals - self.prev_phi_vals)
 
-class PhiSoftTrustCost(optimization.CostFunc):
-  def __init__(self, phi_vars, prev_phi_vals, coeff):
-    self.phi_vars, self.prev_phi_vals, self.coeff = phi_vars, prev_phi_vals, coeff
+#   def convex(self, vals):
+#     out = 0
+#     for i in range(Config.GRID_NX):
+#       for j in range(Config.GRID_NY):
+#         e = self.phi_vars[i,j] - float(self.prev_phi_vals[i,j])
+#         out += e*e
+#     out *= self.coeff
+#     return out
 
-  def get_vars(self): return self.phi_vars
-  def get_name(self): return 'phi_soft_trust'
+# class TPSCost(optimization.CostFunc):
+#   def __init__(self, name, field_vars, eps_x, eps_y, coeff):
+#     self.name, self.field_vars, self.eps_x, self.eps_y, self.coeff = name, field_vars, eps_x, eps_y, coeff
 
-  def eval(self, vals):
-    phi_vals = vals
-    assert phi_vals.shape == self.prev_phi_vals.shape
-    return self.coeff * sumsq(phi_vals - self.prev_phi_vals)
+#   def get_vars(self): return self.field_vars
+#   def get_name(self): return self.name
 
-  def convex(self, vals):
-    out = 0
-    for i in range(Config.GRID_NX):
-      for j in range(Config.GRID_NY):
-        e = self.phi_vars[i,j] - float(self.prev_phi_vals[i,j])
-        out += e*e
-    out *= self.coeff
-    return out
+#   def eval(self, vals):
+#     # TODO: vectorize, add boundary terms
+#     out = 0
+#     for i in range(1, Config.GRID_NX-1):
+#       for j in range(1, Config.GRID_NY-1):
+#         dx = (vals[i-1,j] - 2.*vals[i,j] + vals[i+1,j]) / (self.eps_x**2)
+#         out += dx*dx
+#         dy = (vals[i,j-1] - 2.*vals[i,j] + vals[i,j+1]) / (self.eps_y**2)
+#         out += dy*dy
+#         dxy = (vals[i+1,j+1] - vals[i+1,j-1] - vals[i-1,j+1] + vals[i-1,j-1]) / (4.*self.eps_x*self.eps_y)
+#         out += 2.*dxy*dxy
+#     out *= self.coeff
+#     return out
 
-class TPSCost(optimization.CostFunc):
+#   def convex(self, vals):
+#     out = 0
+#     for i in range(1, Config.GRID_NX-1):
+#       for j in range(1, Config.GRID_NY-1):
+#         dx = (self.field_vars[i-1,j] - 2.*self.field_vars[i,j] + self.field_vars[i+1,j]) / (self.eps_x**2)
+#         out += dx*dx
+#         dy = (self.field_vars[i,j-1] - 2.*self.field_vars[i,j] + self.field_vars[i,j+1]) / (self.eps_y**2)
+#         out += dy*dy
+#         dxy = (self.field_vars[i+1,j+1] - self.field_vars[i+1,j-1] - self.field_vars[i-1,j+1] + self.field_vars[i-1,j-1]) / (4.*self.eps_x*self.eps_y)
+#         out += 2.*dxy*dxy
+#     out *= self.coeff
+#     return out
+
+class GradientNormCost(optimization.CostFunc):
+  USE_ONE_SIDED = True
+
   def __init__(self, name, field_vars, eps_x, eps_y, coeff):
     self.name, self.field_vars, self.eps_x, self.eps_y, self.coeff = name, field_vars, eps_x, eps_y, coeff
 
@@ -227,30 +239,51 @@ class TPSCost(optimization.CostFunc):
 
   def eval(self, vals):
     # TODO: vectorize, add boundary terms
-    out = 0
-    for i in range(1, Config.GRID_NX-1):
-      for j in range(1, Config.GRID_NY-1):
-        dx = (vals[i-1,j] - 2.*vals[i,j] + vals[i+1,j]) / (self.eps_x**2)
-        out += dx*dx
-        dy = (vals[i,j-1] - 2.*vals[i,j] + vals[i,j+1]) / (self.eps_y**2)
-        out += dy*dy
-        dxy = (vals[i+1,j+1] - vals[i+1,j-1] - vals[i-1,j+1] + vals[i-1,j-1]) / (4.*self.eps_x*self.eps_y)
-        out += 2.*dxy*dxy
+    out = 0.
+
+    if self.USE_ONE_SIDED:
+      for i in range(Config.GRID_NX-1):
+        for j in range(Config.GRID_NY-1):
+          dx = (vals[i+1,j] - vals[i,j]) / self.eps_x
+          out += dx*dx
+          dy = (vals[i,j+1] - vals[i,j]) / self.eps_y
+          out += dy*dy
+
+    else:
+      for i in range(1, Config.GRID_NX-1):
+        for j in range(1, Config.GRID_NY-1):
+          dx = (vals[i+1,j] - vals[i-1,j]) / (2.*self.eps_x)
+          out += dx*dx
+          dy = (vals[i,j+1] - vals[i,j-1]) / (2.*self.eps_y)
+          out += dy*dy
+
     out *= self.coeff
     return out
 
   def convex(self, vals):
-    out = 0
-    for i in range(1, Config.GRID_NX-1):
-      for j in range(1, Config.GRID_NY-1):
-        dx = (self.field_vars[i-1,j] - 2.*self.field_vars[i,j] + self.field_vars[i+1,j]) / (self.eps_x**2)
-        out += dx*dx
-        dy = (self.field_vars[i,j-1] - 2.*self.field_vars[i,j] + self.field_vars[i,j+1]) / (self.eps_y**2)
-        out += dy*dy
-        dxy = (self.field_vars[i+1,j+1] - self.field_vars[i+1,j-1] - self.field_vars[i-1,j+1] + self.field_vars[i-1,j-1]) / (4.*self.eps_x*self.eps_y)
-        out += 2.*dxy*dxy
+    out = 0.
+    if self.USE_ONE_SIDED:
+      for i in range(Config.GRID_NX-1):
+        for j in range(Config.GRID_NY-1):
+          dx = (self.field_vars[i+1,j] - self.field_vars[i,j]) / self.eps_x
+          out += dx*dx
+          dy = (self.field_vars[i,j+1] - self.field_vars[i,j]) / self.eps_y
+          out += dy*dy
+
+    else:
+      for i in range(1, Config.GRID_NX-1):
+        for j in range(1, Config.GRID_NY-1):
+          dx = (self.field_vars[i+1,j] - self.field_vars[i-1,j]) / (2.*self.eps_x)
+          out += dx*dx
+          dy = (self.field_vars[i,j+1] - self.field_vars[i,j-1]) / (2.*self.eps_y)
+          out += dy*dy
+
     out *= self.coeff
     return out
+
+
+
+
 
 # class FlowDivergenceCost(optimization.CostFunc):
 #   def __init__(self, u_vars, eps_x, eps_y, coeff):
@@ -314,10 +347,14 @@ class TrackingProblem(object):
     # self.flow_div_cost = FlowDivergenceCost(self.u_vars, self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, 100)
     # self.opt.add_cost(self.flow_div_cost)
 
-    self.flow_tps_0_cost = TPSCost('flow_tps_0', self.u_vars[:,:,0], self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, None)
-    self.opt.add_cost(self.flow_tps_0_cost)
-    self.flow_tps_1_cost = TPSCost('flow_tps_1', self.u_vars[:,:,1], self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, None)
-    self.opt.add_cost(self.flow_tps_1_cost)
+    # self.flow_tps_0_cost = TPSCost('flow_tps_0', self.u_vars[:,:,0], self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, None)
+    # self.opt.add_cost(self.flow_tps_0_cost)
+    # self.flow_tps_1_cost = TPSCost('flow_tps_1', self.u_vars[:,:,1], self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, None)
+    # self.opt.add_cost(self.flow_tps_1_cost)
+    self.flow_grad_0_cost = GradientNormCost('flow_grad_0', self.u_vars[:,:,0], self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, None)
+    self.opt.add_cost(self.flow_grad_0_cost)
+    self.flow_grad_1_cost = GradientNormCost('flow_grad_1', self.u_vars[:,:,1], self.prev_phi_surf.eps_x, self.prev_phi_surf.eps_y, None)
+    self.opt.add_cost(self.flow_grad_1_cost)
 
     self.set_coeffs(flow_norm=0, flow_rigidity=10, obs=1, flow_agree=1, flow_tps=1e-5)
 
@@ -332,7 +369,7 @@ class TrackingProblem(object):
     if flow_agree is not None:
       self.flow_agree_cost.coeff = Config.WEIGHT_SCALE*Config.PIXEL_AREA*flow_agree
     if flow_tps is not None:
-      self.flow_tps_0_cost.coeff = self.flow_tps_1_cost.coeff = flow_tps
+      self.flow_grad_0_cost.coeff = self.flow_grad_1_cost.coeff = flow_tps
 
   def set_prev_phi(self, prev_phi):
     s = make_interp(prev_phi)
