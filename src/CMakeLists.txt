@@ -12,3 +12,10 @@ add_executable(test_expr
   test_expr.cpp
   expr.cpp
 )
+
+add_executable(test_optimize
+  test_optimize.cpp
+  expr.cpp
+  problem.cpp
+  logging.cpp
+  )

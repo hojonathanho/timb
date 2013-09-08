@@ -6,9 +6,12 @@
 #include <vector>
 #include <Eigen/Core>
 #include <boost/shared_ptr.hpp>
+#include "logging.hpp"
 
 using std::vector;
 using std::string;
+
+using Eigen::VectorXd;
 
 typedef vector<string> StrVec;
 

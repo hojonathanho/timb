@@ -1,208 +1,191 @@
-OptResult optimize(const VectorXd& start_x) {
-  OptResult result;
-  VectorXd curr_x = start_x;
-  double trust_region_size = m_params.init_trust_region_size;
+#include "problem.hpp"
 
-  vector<QuadExprPtr> quad_costs(m_costs.size(), NULL);
-  QuadExprPtr trust_region_cost(new QuadExpr);
-  for (int iter = 0; ; ++iter) {
+#include <cstdio>
+using std::printf;
 
-    quad_costs.clear();
-    for (int i = 0; i < m_costs.size(); ++i) {
-      quad_costs[i] = m_costs[i].convex();
+OptParams::OptParams() :
+  init_trust_region_size(1.),
+  trust_shrink_ratio(.1),
+  trust_expand_ratio(2.),
+  min_trust_region_size(1e-4),
+  min_approx_improve(1e-6),
+  improve_ratio_threshold(.25),
+  max_iter(50)
+{ }
+
+class VarFactory {
+public:
+  VarFactory() : m_curr_index(0) { }
+  ~VarFactory() {
+    for (int i = 0; i < m_reps.size(); ++i) {
+      delete m_reps[i];
     }
-
-
-
-
-    if (iter > m_params.max_iter) {
-      blah
-    }
-
-
   }
-}
+  Var make_var(const string& name) {
+    VarRep* rep = new VarRep(m_curr_index++, name, this);
+    m_reps.push_back(rep);
+    return Var(rep);
+  }
+  int num_vars() const { return m_reps.size(); }
 
+private:
+  int m_curr_index;
+  vector<VarRep*> m_reps;
+};
 
+struct OptimizerImpl {
+  OptParams m_params;
+  VarFactory m_var_factory;
+  vector<CostFuncPtr> m_costs;
 
+  int num_vars() const { return m_var_factory.num_vars(); }
 
+  void add_vars(const StrVec& names, vector<Var>& out) {
+    for (int i = 0; i < names.size(); ++i) {
+      out.push_back(m_var_factory.make_var(names[i]));
+    }
+  }
+  void add_cost(CostFuncPtr c) { m_costs.push_back(c); }
 
+  void convexify_costs(const VectorXd& x, vector<QuadFunctionPtr>& out) {
+    out.resize(m_costs.size());
+    for (int i = 0; i < m_costs.size(); ++i) {
+      out[i] = m_costs[i]->quadratic(x);
+      out[i]->init_with_num_vars(num_vars());
+    }
+  }
 
-void optimize() {
-  vector<string> cost_names = getCostNames(prob_->getCosts());
-  vector<ConstraintPtr> constraints = prob_->getConstraints();
-  vector<string> cnt_names = getCntNames(constraints);
+  void eval_quad_costs(const vector<QuadFunctionPtr>& quad_costs, const VectorXd& x, VectorXd& out) {
+    assert(out.size() == m_costs.size() && out.size() == quad_costs.size());
+    for (int i = 0; i < quad_costs.size(); ++i) {
+      out[i] = quad_costs[i]->value(x);
+    }
+  }
 
-  DblVec& x_ = results_.x; // just so I don't have to rewrite code
-  if (x_.size() == 0) PRINT_AND_THROW("you forgot to initialize!");
-  if (!prob_) PRINT_AND_THROW("you forgot to set the optimization problem");    
-  
-  x_ = prob_->getClosestFeasiblePoint(x_);
+  void eval_true_costs(const VectorXd& x, VectorXd& out) {
+    assert(out.size() == m_costs.size());
+    for (int i = 0; i < m_costs.size(); ++i) {
+      out[i] = m_costs[i]->eval(x);
+    }
+  }
 
-  assert(x_.size() == prob_->getVars().size());
-  assert(prob_->getCosts().size() > 0 || constraints.size() > 0);
+  void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& quad_cost_vals, const VectorXd& new_cost_vals,
+                       double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
+    assert(m_costs.size() == quad_cost_vals.size() && m_costs.size() == new_cost_vals.size() && m_costs.size() == old_cost_vals.size());
 
-  OptStatus retval = INVALID;
-
-  for (int merit_increases=0; merit_increases < max_merit_coeff_increases_; ++merit_increases) { /* merit adjustment loop */
-    for (int iter=1; ; ++iter) { /* sqp loop */
-      callCallbacks(x_);
-
-      LOG_DEBUG("current iterate: %s", CSTR(x_));
-      LOG_INFO("iteration %i", iter);
-
-      // speedup: if you just evaluated the cost when doing the line search, use that
-      if (results_.cost_vals.empty() && results_.cnt_viols.empty()) { //only happens on the first iteration
-        results_.cnt_viols = evaluateConstraintViols(constraints, x_);
-        results_.cost_vals = evaluateCosts(prob_->getCosts(), x_);
-        assert(results_.n_func_evals == 0);
-        ++results_.n_func_evals;
+    printf("%15s | %10s | %10s | %10s | %10s\n", "", "oldexact", "dapprox", "dexact", "ratio");
+    printf("%15s | %10s---%10s---%10s---%10s\n", "COSTS", "----------", "----------", "----------", "----------");
+    for (int i = 0; i < old_cost_vals.size(); ++i) {
+      double approx_improve = old_cost_vals[i] - quad_cost_vals[i];
+      double exact_improve = old_cost_vals[i] - new_cost_vals[i];
+      double ratio = exact_improve / approx_improve;
+      if (fabs(approx_improve) > 1e-8) {
+        printf("%15s | %10.3e | %10.3e | %10.3e | %10.3e\n", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, ratio);
+      } else {
+        printf("%15s | %10.3e | %10.3e | %10.3e | %10s\n", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, "  ------  ");
       }
+    }
+    printf("%15s | %10.3e | %10.3e | %10.3e | %10.3e\n", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
+  }
 
-      // DblVec new_cnt_viols = evaluateConstraintViols(constraints, x_);
-      // DblVec new_cost_vals = evaluateCosts(prob_->getCosts(), x_);
-      // cout << "costs" << endl;
-      // for (int i=0; i < new_cnt_viols.size(); ++i) {
-      //   cout << cnt_names[i] << " " << new_cnt_viols[i] - results_.cnt_viols[i] << endl;
-      // }
-      // for (int i=0; i < new_cost_vals.size(); ++i) {
-      //   cout << cost_names[i] << " " << new_cost_vals[i] - results_.cost_vals[i] << endl;
-      // }
+  OptResultPtr optimize(const VectorXd& start_x) {
+    OptResultPtr result(new OptResult);
+    result->status = OPT_INCOMPLETE;
+    result->x = start_x;
+    result->cost_vals = VectorXd::Zero(m_costs.size());
+    eval_true_costs(start_x, result->cost_vals);
+    result->cost = result->cost_vals.sum();
 
+    VectorXd new_x;
+    double trust_region_size = m_params.init_trust_region_size;
 
-      vector<ConvexObjectivePtr> cost_models = convexifyCosts(prob_->getCosts(),x_, model_.get());
-      vector<ConvexConstraintsPtr> cnt_models = convexifyConstraints(constraints, x_, model_.get());
-      vector<ConvexObjectivePtr> cnt_cost_models = cntsToCosts(cnt_models, merit_error_coeff_, model_.get());
-      model_->update();
-      BOOST_FOREACH(ConvexObjectivePtr& cost, cost_models)cost->addConstraintsToModel();
-      BOOST_FOREACH(ConvexObjectivePtr& cost, cnt_cost_models)cost->addConstraintsToModel();
-      model_->update();
-      QuadExpr objective;
-      BOOST_FOREACH(ConvexObjectivePtr& co, cost_models)exprInc(objective, co->quad_);
-      BOOST_FOREACH(ConvexObjectivePtr& co, cnt_cost_models){
-        exprInc(objective, co->quad_);
-      }
-//    objective = cleanupExpr(objective);
-      model_->setObjective(objective);
+    vector<QuadFunctionPtr> quad_costs(m_costs.size(), QuadFunctionPtr());
+    VectorXd quad_cost_vals(VectorXd::Zero(m_costs.size()));
+    VectorXd new_cost_vals(VectorXd::Zero(m_costs.size()));
+    Eigen::ConjugateGradient<QuadFunction::SparseMatrixT, Eigen::Lower> solver;
+    QuadFunction::SparseMatrixT quad_A_lower(num_vars(), num_vars());
+    VectorXd quad_b(VectorXd::Zero(num_vars()));
+    double quad_c = 0.;
+    QuadExprPtr trust_region_cost(new QuadExpr);
 
-//    if (logging::filter() >= IPI_LEVEL_DEBUG) {
-//      DblVec model_cost_vals;
-//      BOOST_FOREACH(ConvexObjectivePtr& cost, cost_models) {
-//        model_cost_vals.push_back(cost->value(x));
-//      }
-//      LOG_DEBUG("model costs %s should equalcosts  %s", printer(model_cost_vals), printer(cost_vals));
-//    }
+    int iter = 0;
+    while (true) {
+      convexify_costs(result->x, quad_costs);
 
-      while (trust_box_size_ >= min_trust_box_size_) {
+      while (trust_region_size >= m_params.min_trust_region_size) {
+        // set trust region
 
-        setTrustBoxConstraints(x_);
-        CvxOptStatus status = model_->optimize();
-        ++results_.n_qp_solves;
-        if (status != CVX_SOLVED) {
-          LOG_ERROR("convex solver failed! set TRAJOPT_LOG_THRESH=DEBUG to see solver output. saving model to /tmp/fail.lp");
-          model_->writeToFile("/tmp/fail.lp");
-          retval = OPT_FAILED;
-          goto cleanup;
+        // build and solve the quadratic problem
+        quad_A_lower.setZero(); quad_b.setZero(); quad_c = 0.;
+        for (int i = 0; i < quad_costs.size(); ++i) {
+          quad_A_lower += quad_costs[i]->A_lower();
+          quad_b += quad_costs[i]->b();
+          quad_c += quad_costs[i]->c();
         }
-        DblVec model_var_vals = model_->getVarValues(model_->getVars());
+        solver.compute(quad_A_lower);
+        new_x = solver.solve(-quad_b); // TODO: warm start and early termination
+        ++result->n_qp_solves;
 
-        DblVec model_cost_vals = evaluateModelCosts(cost_models, model_var_vals);
-        DblVec model_cnt_viols = evaluateModelCntViols(cnt_models, model_var_vals);
+        eval_quad_costs(quad_costs, new_x, quad_cost_vals);
+        eval_true_costs(new_x, new_cost_vals);
+        ++result->n_func_evals;
 
-        // the n variables of the OptProb happen to be the first n variables in the Model
-        DblVec new_x(model_var_vals.begin(), model_var_vals.begin() + x_.size());
-
-        if (GetLogLevel() >= util::LevelDebug) {
-          DblVec cnt_costs1 = evaluateModelCosts(cnt_cost_models, model_var_vals);
-          DblVec cnt_costs2 = model_cnt_viols;
-          for (int i=0; i < cnt_costs2.size(); ++i) cnt_costs2[i] *= merit_error_coeff_;
-          LOG_DEBUG("SHOULD BE ALMOST THE SAME: %s ?= %s", CSTR(cnt_costs1), CSTR(cnt_costs2) );
-          // not exactly the same because cnt_costs1 is based on aux variables, but they might not be at EXACTLY the right value
-        }
-
-        DblVec new_cost_vals = evaluateCosts(prob_->getCosts(), new_x);
-        DblVec new_cnt_viols = evaluateConstraintViols(constraints, new_x);
-        ++results_.n_func_evals;
-
-        double old_merit = vecSum(results_.cost_vals) + merit_error_coeff_ * vecSum(results_.cnt_viols);
-        double model_merit = vecSum(model_cost_vals) + merit_error_coeff_ * vecSum(model_cnt_viols);
-        double new_merit = vecSum(new_cost_vals) + merit_error_coeff_ * vecSum(new_cnt_viols);
+        double old_merit = result->cost;
+        double model_merit = quad_cost_vals.sum();
+        double new_merit = new_cost_vals.sum();
         double approx_merit_improve = old_merit - model_merit;
         double exact_merit_improve = old_merit - new_merit;
         double merit_improve_ratio = exact_merit_improve / approx_merit_improve;
 
         if (util::GetLogLevel() >= util::LevelInfo) {
           LOG_INFO(" ");
-          printCostInfo(results_.cost_vals, model_cost_vals, new_cost_vals,
-                        results_.cnt_viols, model_cnt_viols, new_cnt_viols, cost_names,
-                        cnt_names, merit_error_coeff_);
-          printf("%15s | %10.3e | %10.3e | %10.3e | %10.3e\n", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
+          print_cost_info(result->cost_vals, quad_cost_vals, new_cost_vals, old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
         }
 
         if (approx_merit_improve < -1e-5) {
           LOG_ERROR("approximate merit function got worse (%.3e). (convexification is probably wrong to zeroth order)", approx_merit_improve);
         }
-        if (approx_merit_improve < min_approx_improve_) {
-          LOG_INFO("converged because improvement was small (%.3e < %.3e)", approx_merit_improve, min_approx_improve_);
-          retval = OPT_CONVERGED;
-          goto penaltyadjustment;
+        if (approx_merit_improve < m_params.min_approx_improve) {
+          LOG_INFO("converged because improvement was small (%.3e < %.3e)", approx_merit_improve, m_params.min_approx_improve);
+          result->status = OPT_CONVERGED;
+          goto out;
         }
-        if (approx_merit_improve / old_merit < min_approx_improve_frac_) {
-          LOG_INFO(
-              "converged because improvement ratio was small (%.3e < %.3e)",
-              approx_merit_improve/old_merit, min_approx_improve_frac_);
-          retval = OPT_CONVERGED;
-          goto penaltyadjustment;
-        } 
-        else if (exact_merit_improve < 0 || merit_improve_ratio < improve_ratio_threshold_) {
-          adjustTrustRegion(trust_shrink_ratio_);
-          LOG_INFO("shrunk trust region. new box size: %.4f",
-              trust_box_size_);
+        if (exact_merit_improve < 0 || merit_improve_ratio < m_params.improve_ratio_threshold) {
+          trust_region_size *= m_params.trust_shrink_ratio;
+          LOG_INFO("shrunk trust region. new box size: %.4f", trust_region_size);
         } else {
-          x_ = new_x;
-          results_.cost_vals = new_cost_vals;
-          results_.cnt_viols = new_cnt_viols;
-          adjustTrustRegion(trust_expand_ratio_);
-          LOG_INFO("expanded trust region. new box size: %.4f",trust_box_size_);
+          result->x = new_x;
+          result->cost_vals = new_cost_vals;
+          result->cost = new_cost_vals.sum();
+          trust_region_size *= m_params.trust_expand_ratio;
+          LOG_INFO("expanded trust region. new box size: %.4f", trust_region_size);
           break;
         }
       }
 
-      if (trust_box_size_ < min_trust_box_size_) {
+      if (trust_region_size < m_params.min_trust_region_size) {
         LOG_INFO("converged because trust region is tiny");
-        retval = OPT_CONVERGED;
-        goto penaltyadjustment;
-      } else if (iter >= max_iter_) {
+        result->status = OPT_CONVERGED;
+        goto out;
+      } else if (iter >= m_params.max_iter) {
         LOG_INFO("iteration limit");
-        retval = OPT_SCO_ITERATION_LIMIT;
-        goto cleanup;
+        result->status = OPT_ITER_LIMIT;
+        goto out;
       }
+
+      ++iter;
     }
 
-    penaltyadjustment:
-    if (results_.cnt_viols.empty() || vecMax(results_.cnt_viols) < cnt_tolerance_) {
-      if (results_.cnt_viols.size() > 0) LOG_INFO("woo-hoo! constraints are satisfied (to tolerance %.2e)", cnt_tolerance_);
-      goto cleanup;
-    }
-    else {
-      LOG_INFO("not all constraints are satisfied. increasing penalties");
-      merit_error_coeff_ *= merit_coeff_increase_ratio_;
-      trust_box_size_ = fmax(trust_box_size_, min_trust_box_size_ / trust_shrink_ratio_ * 1.5);
-    }
-
-
-
+  out:
+    result->n_iters = iter;
+    return result;
   }
-  retval = OPT_PENALTY_ITERATION_LIMIT;
-  LOG_INFO("optimization couldn't satisfy all constraints");
+
+};
 
 
-  cleanup:
-  assert(retval != INVALID && "should never happen");
-  results_.status = retval;
-  results_.total_cost = vecSum(results_.cost_vals);
-  LOG_INFO("\n==================\n%s==================", CSTR(results_));
-  callCallbacks(x_);
-
-  return retval;
-}
+Optimizer::Optimizer() : m_impl(new OptimizerImpl()) { }
+OptParams& Optimizer::params() { return m_impl->m_params; }
+void Optimizer::add_vars(const vector<string>& names, vector<Var>& out) { m_impl->add_vars(names, out); }
+void Optimizer::add_cost(CostFuncPtr c) { m_impl->add_cost(c); }
+OptResultPtr Optimizer::optimize(const VectorXd& start_x) { return m_impl->optimize(start_x); }
