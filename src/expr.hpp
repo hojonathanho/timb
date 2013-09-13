@@ -59,65 +59,6 @@ struct QuadExpr {
 };
 typedef boost::shared_ptr<QuadExpr> QuadExprPtr;
 
-class QuadFunction {
-public:
-  typedef Eigen::SparseMatrix<double> SparseMatrixT;
-  typedef Eigen::SparseSelfAdjointView<SparseMatrixT, Eigen::Lower> SparseSelfAdjointViewT;
-
-  QuadFunction(const QuadExpr& qe) : m_quad_expr(qe), m_initialized(false) { }
-
-  void init_with_num_vars(int n) { if (!m_initialized) init_from_expr(n, m_quad_expr); }
-
-  const SparseSelfAdjointViewT A() const { assert(m_initialized); return m_A.selfadjointView<Eigen::Lower>(); }
-  const SparseMatrixT& A_lower() const { assert(m_initialized); return m_A; } // warning: only lower triangle filled out!
-  const Eigen::VectorXd& b() const { assert(m_initialized); return m_b; }
-  double c() const { assert(m_initialized); return m_c; }
-
-  double value(const Eigen::VectorXd& x) const {
-    assert(m_initialized && x.size() == m_b.size());
-    return .5*x.dot(A()*x) + m_b.dot(x) + m_c;
-  }
-
-private:
-  // 1/2 x^T A x + b^T x + c
-  SparseMatrixT m_A; // lower triangle only
-  Eigen::VectorXd m_b;
-  double m_c;
-
-  bool m_initialized;
-  const QuadExpr m_quad_expr;
-
-  void init_from_expr(int num_vars, const QuadExpr &qe) {
-    // quadratic part
-    m_A.resize(num_vars, num_vars);
-    m_A.setZero();
-    typedef Eigen::Triplet<double> T;
-    vector<T> triplets;
-    triplets.reserve(qe.size());
-    for (int i = 0; i < qe.size(); ++i) {
-      int ind1 = qe.vars1[i].rep->index, ind2 = qe.vars2[i].rep->index;
-      // only fill in lower diagonal
-      if (ind1 < ind2) { std::swap(ind1, ind2); }
-      double coeff = qe.coeffs[i];
-      if (ind1 == ind2) { coeff *= 2; }
-      triplets.push_back(T(ind1, ind2, coeff));
-    }
-    m_A.setFromTriplets(triplets.begin(), triplets.end());
-
-    // affine part
-    m_b.resize(num_vars);
-    m_b.setZero();
-    for (int i = 0; i < qe.affexpr.size(); ++i) {
-      m_b(qe.affexpr.vars[i].rep->index) = qe.affexpr.coeffs[i];
-    }
-    m_c = qe.affexpr.constant;
-
-    m_initialized = true;
-  }
-};
-typedef boost::shared_ptr<QuadFunction> QuadFunctionPtr;
-
-
 ////// In-place operations ///////
 
 // multiplication
