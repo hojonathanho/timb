@@ -14,6 +14,7 @@ enum LogLevel {
 
 extern LogLevel gLogLevel;
 inline LogLevel GetLogLevel() {return gLogLevel;}
+int LoggingInit();
 
   
 #define FATAL_PREFIX "\x1b[31m[FATAL] "

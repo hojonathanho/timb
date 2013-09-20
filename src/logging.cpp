@@ -7,8 +7,11 @@ using namespace std;
 namespace util {
 
 LogLevel gLogLevel;
+bool gLoggingInitialized = false;
 
 int LoggingInit() {
+  if (gLoggingInitialized) return 1;
+
   const char* VALID_THRESH_VALUES = "FATAL ERROR WARN INFO DEBUG TRACE";
 
   char* lvlc = getenv("TRAJOPT_LOG_THRESH");
@@ -29,9 +32,11 @@ int LoggingInit() {
     printf("Valid values: %s\n", VALID_THRESH_VALUES);
     abort();
   }
-  return 1;  
+
+  gLoggingInitialized = true;
+  return 1;
 }
+
 int this_is_a_hack_but_rhs_executes_on_library_load = LoggingInit();
 
 }
-

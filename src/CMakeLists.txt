@@ -1,21 +1,21 @@
-# add_library(sqp
-#   expr.cpp
-#   lm.cpp
-# )
-# target_link_libraries()
-
-set(EIGEN_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/eigen-3.2.0)
-
-include_directories(${EIGEN_INCLUDE_DIRS})
+include_directories(
+  ${EIGEN_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIRS}
+)
 
 add_executable(test_expr
   test_expr.cpp
   expr.cpp
 )
 
-add_executable(test_optimize
-  test_optimize.cpp
+add_library(timb
   expr.cpp
   problem.cpp
   logging.cpp
-  )
+)
+
+add_executable(test_optimize test_optimize.cpp)
+target_link_libraries(test_optimize timb)
+
+boost_python_module(ctimbpy python_interface.cpp numpy_utils.cpp)
+target_link_libraries(ctimbpy timb)

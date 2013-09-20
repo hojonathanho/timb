@@ -1,92 +1,82 @@
 #include <boost/python.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include "tracking_problem.hpp"
-
+#include "logging.hpp"
+#include "numpy_utils.hpp"
 namespace py = boost::python;
 
-BOOST_PYTHON_MODULE(cbulletsimpy) {
-  // LoggingInit();
-  // log4cplus::Logger::getRoot().setLogLevel(GeneralConfig::verbose);
+struct PyTrackingProblemResult {
+  py::object phi, u;
+  OptResultPtr opt_result;
 
-  // bs::InitPython();
+  PyTrackingProblemResult(const TrackingProblemResult& res) {
+    phi = util::toNdarray(to_eigen(res.phi));
+    py::object u_x = util::toNdarray(to_eigen(res.u_x));
+    py::object u_y = util::toNdarray(to_eigen(res.u_y));
+    u = util::np_mod.attr("dstack")(py::make_tuple(u_x, u_y));
+    opt_result = res.opt_result;
+  }
+};
+typedef boost::shared_ptr<PyTrackingProblemResult> PyTrackingProblemResultPtr;
+
+
+class PyTrackingProblem : public TrackingProblem {
+public:
+  PyTrackingProblem(double xmin_, double xmax_, double ymin_, double ymax_, int nx_, int ny_) : TrackingProblem(xmin_, xmax_, ymin_, ymax_, nx_, ny_) { }
+
+  void py_set_observation_points(py::object py_pts) {
+    MatrixX2d pts;
+    util::fromNdarray(py_pts, pts);
+    set_observation_points(pts);
+  }
+
+  void py_set_prev_phi(py::object py_prev_phi) {
+    // TODO: there is an extra memory copy here... ?
+    MatrixXd prev_phi_data;
+    util::fromNdarray(py_prev_phi, prev_phi_data);
+    DoubleField prev_phi(m_ctx->grid_params);
+    from_eigen(prev_phi_data, prev_phi);
+    set_prev_phi(prev_phi);
+  }
+
+  PyTrackingProblemResultPtr py_optimize() {
+    return PyTrackingProblemResultPtr(new PyTrackingProblemResult(*optimize()));
+  }
+};
+typedef boost::shared_ptr<PyTrackingProblem> PyTrackingProblemPtr;
+
+BOOST_PYTHON_MODULE(ctimbpy) {
+  util::LoggingInit();
+  util::PythonInit();
 
   // py::register_exception_translator<std::exception>(&bs::TranslateStdException);
 
-  py::class_<TrackingProblem, TrackingProblemPtr>("TrackingProblem")
-    .def()
+  py::class_<std::vector<double> >("PyVec")
+    .def(py::vector_indexing_suite<std::vector<double> >());
 
-  py::class_<bs::BulletObject, bs::BulletObjectPtr>("BulletObject", py::no_init)
-    .def("IsKinematic", &bs::BulletObject::IsKinematic)
-    .def("GetName", &bs::BulletObject::GetName)
-    .def("GetKinBody", &bs::BulletObject::py_GetKinBody, "get the KinBody in the OpenRAVE environment this object was created from")
-    .def("GetTransform", &bs::BulletObject::py_GetTransform)
-    .def("SetTransform", &bs::BulletObject::py_SetTransform)
-    .def("SetLinearVelocity", &bs::BulletObject::py_SetLinearVelocity)
-    .def("SetAngularVelocity", &bs::BulletObject::py_SetAngularVelocity)
-    .def("UpdateBullet", &bs::BulletObject::UpdateBullet, "set bullet object transform from the current transform in the OpenRAVE environment")
-    .def("UpdateRave", &bs::BulletObject::UpdateRave, "set the transform in the OpenRAVE environment from what it currently is in Bullet")
-    ;
-  py::class_<vector<bs::BulletObjectPtr> >("vector_BulletObject")
-    .def(py::vector_indexing_suite<vector<bs::BulletObjectPtr>, true>());
-
-  py::class_<bs::Collision, bs::CollisionPtr>("Collision", py::no_init)
-    .add_property("linkA", &bs::Collision::py_linkA)
-    .add_property("linkB", &bs::Collision::py_linkB)
-    .add_property("ptA", &bs::Collision::py_ptA)
-    .add_property("ptB", &bs::Collision::py_ptB)
-    .add_property("normalB2A", &bs::Collision::py_normalB2A)
-    .def_readonly("distance", &bs::Collision::distance)
-    .def_readonly("weight", &bs::Collision::weight)
-    .def("Flipped", &bs::Collision::Flipped)
-    ;
-  py::class_<vector<bs::CollisionPtr> >("vector_Collision")
-    .def(py::vector_indexing_suite<vector<bs::CollisionPtr>, true>());
-
-  py::class_<BulletConstraint, BulletConstraint::Ptr, boost::noncopyable>("BulletConstraint", py::no_init);
-
-  py::class_<bs::SimulationParams>("SimulationParams")
-    .def_readwrite("scale", &bs::SimulationParams::scale)
-    .def_readwrite("gravity", &bs::SimulationParams::gravity)
-    .def_readwrite("dt", &bs::SimulationParams::dt)
-    .def_readwrite("maxSubSteps", &bs::SimulationParams::maxSubSteps)
-    .def_readwrite("internalTimeStep", &bs::SimulationParams::internalTimeStep)
-    .def_readwrite("friction", &bs::SimulationParams::friction)
-    .def_readwrite("restitution", &bs::SimulationParams::restitution)
-    .def_readwrite("margin", &bs::SimulationParams::margin)
-    .def_readwrite("linkPadding", &bs::SimulationParams::linkPadding)
+  py::class_<OptResult, OptResultPtr>("OptResult", py::no_init)
+    .def_readonly("status", &OptResult::status)
+    .def_readonly("cost", &OptResult::cost)
+    .def_readonly("cost_over_iters", &OptResult::cost_over_iters)
     ;
 
-  py::class_<bs::BulletEnvironment, bs::BulletEnvironmentPtr>("BulletEnvironment", py::init<py::object, py::list>())
-    .def("GetObjectByName", &bs::BulletEnvironment::GetObjectByName, "get a BulletObject, given the OpenRAVE object name")
-    .def("GetObjectFromKinBody", &bs::BulletEnvironment::py_GetObjectFromKinBody, "")
-    .def("GetObjects", &bs::BulletEnvironment::GetObjects, "get all objects")
-    .def("GetDynamicObjects", &bs::BulletEnvironment::GetDynamicObjects, "get dynamic objects")
-    .def("GetRaveEnv", &bs::BulletEnvironment::py_GetRaveEnv, "get the backing OpenRAVE environment")
-    .def("SetGravity", &bs::BulletEnvironment::py_SetGravity)
-    .def("GetGravity", &bs::BulletEnvironment::py_GetGravity)
-    .def("Step", &bs::BulletEnvironment::Step)
-    .def("DetectAllCollisions", &bs::BulletEnvironment::DetectAllCollisions)
-    .def("ContactTest", &bs::BulletEnvironment::ContactTest)
-    .def("SetContactDistance", &bs::BulletEnvironment::SetContactDistance)
-    .def("AddConstraint", &bs::BulletEnvironment::py_AddConstraint)
-    .def("RemoveConstraint", &bs::BulletEnvironment::RemoveConstraint)
+  py::class_<TrackingProblemCoeffs, TrackingProblemCoeffsPtr>("TrackingProblemCoeffs")
+    .def_readwrite("flow_norm", &TrackingProblemCoeffs::flow_norm)
+    .def_readwrite("flow_rigidity", &TrackingProblemCoeffs::flow_rigidity)
+    .def_readwrite("observation", &TrackingProblemCoeffs::observation)
+    .def_readwrite("phi_agreement", &TrackingProblemCoeffs::phi_agreement)
     ;
 
-  py::class_<bs::CapsuleRopeParams>("CapsuleRopeParams")
-    .def_readwrite("radius", &bs::CapsuleRopeParams::radius)
-    .def_readwrite("angStiffness", &bs::CapsuleRopeParams::angStiffness)
-    .def_readwrite("angDamping", &bs::CapsuleRopeParams::angDamping)
-    .def_readwrite("linDamping", &bs::CapsuleRopeParams::linDamping)
-    .def_readwrite("angLimit", &bs::CapsuleRopeParams::angLimit)
-    .def_readwrite("linStopErp", &bs::CapsuleRopeParams::linStopErp)
+  py::class_<PyTrackingProblemResult, PyTrackingProblemResultPtr>("TrackingProblemResult", py::no_init)
+    .def_readwrite("phi", &PyTrackingProblemResult::phi)
+    .def_readwrite("u", &PyTrackingProblemResult::u)
+    .def_readonly("opt_result", &PyTrackingProblemResult::opt_result)
     ;
 
-  py::class_<bs::CapsuleRope, bs::CapsuleRopePtr, py::bases<bs::BulletObject> >("CapsuleRope", py::init<bs::BulletEnvironmentPtr, const string&, py::object, const bs::CapsuleRopeParams&>())
-    .def("GetNodes", &bs::CapsuleRope::py_GetNodes)
-    .def("GetControlPoints", &bs::CapsuleRope::py_GetControlPoints)
-    .def("GetRotations", &bs::CapsuleRope::py_GetRotations)
-    .def("GetHalfHeights", &bs::CapsuleRope::py_GetHalfHeights)
+  py::class_<PyTrackingProblem, PyTrackingProblemPtr>("TrackingProblem", py::init<double, double, double, double, int, int>())
+    .def("set_observation_points", &PyTrackingProblem::py_set_observation_points)
+    .def("set_prev_phi", &PyTrackingProblem::py_set_prev_phi)
+    .def_readwrite("coeffs", &PyTrackingProblem::m_coeffs)
+    .def("optimize", &PyTrackingProblem::py_optimize)
     ;
-
-  py::scope().attr("sim_params") = bs::GetSimParams();
 }

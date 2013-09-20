@@ -12,6 +12,8 @@ using std::vector;
 using std::string;
 
 using Eigen::VectorXd;
+using Eigen::MatrixXd;
+using Eigen::MatrixX2d;
 
 typedef vector<string> StrVec;
 

@@ -20,8 +20,8 @@ public:
   double value(const Eigen::VectorXd& x) const {
     // if sparse matrices filled, out, use those
     // otherwise just call the quad expr's evaluate method
-    assert(x.size() == m_b.size());
     if (m_initialized) {
+      assert(x.size() == m_b.size());
       return .5*x.dot(A()*x) + m_b.dot(x) + m_c;
     }
     return m_quad_expr.value(x);
@@ -91,7 +91,7 @@ typedef boost::shared_ptr<CostFunc> CostFuncPtr;
 
 class QuadraticCostFunc : public CostFunc {
 public:
-  QuadraticCostFunc(const string& name) : m_quad() ,CostFunc(name) { }
+  QuadraticCostFunc(const string& name) : m_quad(), CostFunc(name) { }
   QuadraticCostFunc(const string& name, const QuadExpr& expr) : m_quad(new QuadFunction(expr)), CostFunc(name) { }
 
   virtual double eval(const VectorXd& x) { return m_quad->value(x); }
@@ -100,7 +100,6 @@ public:
 protected:
   QuadFunctionPtr m_quad;
   void init_from_expr(const QuadExpr& expr) {
-    assert(!m_quad);
     m_quad.reset(new QuadFunction(expr));
   }
 };
@@ -129,6 +128,7 @@ struct OptResult {
   VectorXd x;
   double cost;
   VectorXd cost_vals;
+  vector<double> cost_over_iters;
 
   int n_func_evals, n_qp_solves, n_iters;
 
@@ -144,6 +144,7 @@ public:
 
   void add_vars(const StrVec& names, vector<Var>& out);
   void add_cost(CostFuncPtr cost, double coeff=1.);
+  void set_cost_coeff(CostFuncPtr cost, double coeff);
 
   int num_vars() const;
 
@@ -152,3 +153,4 @@ public:
 private:
   boost::shared_ptr<OptimizerImpl> m_impl;
 };
+typedef boost::shared_ptr<Optimizer> OptimizerPtr;

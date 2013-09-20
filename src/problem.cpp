@@ -1,16 +1,18 @@
 #include "problem.hpp"
 
+#include <map>
 #include <cstdio>
 using std::printf;
+using std::map;
 
 OptParams::OptParams() :
-  init_trust_region_size(1e3),
+  init_trust_region_size(1e4),
   trust_shrink_ratio(.1),
   trust_expand_ratio(2.),
   min_trust_region_size(1e-4),
   min_approx_improve(1e-6),
   improve_ratio_threshold(.25),
-  max_iter(50)
+  max_iter(100)
 { }
 
 class VarFactory {
@@ -92,6 +94,7 @@ struct OptimizerImpl {
   int num_vars() const { return m_var_factory.num_vars(); }
 
   void add_vars(const StrVec& names, vector<Var>& out) {
+    out.clear();
     for (int i = 0; i < names.size(); ++i) {
       out.push_back(m_var_factory.make_var(names[i]));
     }
@@ -108,44 +111,53 @@ struct OptimizerImpl {
   }
 
   void convexify_costs(const VectorXd& x, vector<QuadFunctionPtr>& out) {
+    LOG_DEBUG("Convexifying costs:");
     out.resize(m_costs.size());
     for (int i = 0; i < m_costs.size(); ++i) {
+      LOG_DEBUG("\t%s", m_costs[i]->name().c_str());
       out[i] = m_costs[i]->quadratic(x);
       out[i]->init_with_num_vars(num_vars());
     }
+    LOG_DEBUG("Done");
   }
 
   void eval_quad_costs(const vector<QuadFunctionPtr>& quad_costs, const VectorXd& x, VectorXd& out) {
+    LOG_DEBUG("Evaluating model costs:");
     assert(out.size() == m_costs.size() && out.size() == quad_costs.size());
     for (int i = 0; i < quad_costs.size(); ++i) {
+      LOG_DEBUG("\t%s", m_costs[i]->name().c_str());
       out[i] = m_cost_coeffs[i] * quad_costs[i]->value(x);
     }
+    LOG_DEBUG("Done");
   }
 
   void eval_true_costs(const VectorXd& x, VectorXd& out) {
+    LOG_DEBUG("Evaluating true costs:");
     assert(out.size() == m_costs.size());
     for (int i = 0; i < m_costs.size(); ++i) {
+      LOG_DEBUG("\t%s", m_costs[i]->name().c_str());
       out[i] = m_cost_coeffs[i] * m_costs[i]->eval(x);
     }
+    LOG_DEBUG("Done");
   }
 
   void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& quad_cost_vals, const VectorXd& new_cost_vals,
                        double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
     assert(m_costs.size() == quad_cost_vals.size() && m_costs.size() == new_cost_vals.size() && m_costs.size() == old_cost_vals.size());
 
-    LOG_INFO("%10s | %10s | %10s | %10s | %10s", "", "oldexact", "dapprox", "dexact", "ratio");
-    LOG_INFO("%10s | %10s---%10s---%10s---%10s", "COSTS", "----------", "----------", "----------", "----------");
+    LOG_INFO("%15s | %10s | %10s | %10s | %10s", "", "oldexact", "dapprox", "dexact", "ratio");
+    LOG_INFO("%15s | %10s---%10s---%10s---%10s", "COSTS", "----------", "----------", "----------", "----------");
     for (int i = 0; i < old_cost_vals.size(); ++i) {
       double approx_improve = old_cost_vals[i] - quad_cost_vals[i];
       double exact_improve = old_cost_vals[i] - new_cost_vals[i];
       double ratio = exact_improve / approx_improve;
       if (fabs(approx_improve) > 1e-8) {
-        LOG_INFO("%10s | %10.3e | %10.3e | %10.3e | %10.3e", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, ratio);
+        LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, ratio);
       } else {
-        LOG_INFO("%10s | %10.3e | %10.3e | %10.3e | %10s", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, "  ------  ");
+        LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10s", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, "  ------  ");
       }
     }
-    LOG_INFO("%10s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
+    LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
   }
 
   OptResultPtr optimize(const VectorXd& start_x) {
@@ -156,6 +168,7 @@ struct OptimizerImpl {
     result->cost_vals = VectorXd::Zero(m_costs.size());
     eval_true_costs(start_x, result->cost_vals);
     result->cost = result->cost_vals.sum();
+    result->cost_over_iters.push_back(result->cost);
 
     VectorXd new_x;
     double trust_region_size = m_params.init_trust_region_size;
@@ -173,25 +186,28 @@ struct OptimizerImpl {
     int iter = 0;
     while (true) {
       convexify_costs(result->x, quad_costs);
-      trust_region.set_center(result->x);
 
+      // trust region loop
+      trust_region.set_center(result->x);
       while (trust_region_size >= m_params.min_trust_region_size) {
-        // set trust region
         trust_region.set_size(trust_region_size);
 
         // build the quadratic subproblem
+        LOG_DEBUG("Building quadratic problem");
         quad_A_lower.setZero(); quad_b.setZero(); quad_c = 0.;
         for (int i = 0; i < quad_costs.size(); ++i) {
           quad_costs[i]->add_to(quad_A_lower, quad_b, quad_c, m_cost_coeffs[i]);
         }
         trust_region.add_to(quad_A_lower, quad_b, quad_c);
         quad_A_lower.makeCompressed(); // TODO: every iteration?
-
+        LOG_DEBUG("Done building quadratic problem");
 
         // solve the quadratic subproblem
+        LOG_DEBUG("Solving subproblem");
         solver.compute(quad_A_lower);
-        new_x = solver.solve(-quad_b); // TODO: warm start and early termination
+        new_x = solver.solveWithGuess(-quad_b, result->x); // TODO: warm start and early termination
         ++result->n_qp_solves;
+        LOG_DEBUG("Done solving subproblem");
 
         eval_quad_costs(quad_costs, new_x, quad_cost_vals);
         eval_true_costs(new_x, new_cost_vals);
@@ -223,12 +239,14 @@ struct OptimizerImpl {
         } else {
           result->x = new_x;
           result->cost_vals = new_cost_vals;
-          result->cost = new_cost_vals.sum();
+          double cost = new_cost_vals.sum();
+          result->cost = cost;
+          result->cost_over_iters.push_back(cost);
           trust_region_size *= m_params.trust_expand_ratio;
           LOG_INFO("expanded trust region. new radius: %.3e, cost: %.3e", trust_region_size, trust_region.cost_coeff());
           break;
         }
-      }
+      } // end trust region loop
 
       if (trust_region_size < m_params.min_trust_region_size) {
         LOG_INFO("converged because trust region is tiny");
@@ -254,6 +272,8 @@ struct OptimizerImpl {
 
 Optimizer::Optimizer() : m_impl(new OptimizerImpl()) { }
 OptParams& Optimizer::params() { return m_impl->m_params; }
+int Optimizer::num_vars() const { return m_impl->num_vars(); }
 void Optimizer::add_vars(const vector<string>& names, vector<Var>& out) { m_impl->add_vars(names, out); }
 void Optimizer::add_cost(CostFuncPtr cost, double coeff) { m_impl->add_cost(cost, coeff); }
+void Optimizer::set_cost_coeff(CostFuncPtr cost, double coeff) { m_impl->set_cost_coeff(cost, coeff); }
 OptResultPtr Optimizer::optimize(const VectorXd& start_x) { return m_impl->optimize(start_x); }
