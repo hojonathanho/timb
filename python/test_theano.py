@@ -75,18 +75,18 @@ print 'arr', test_u
 J_theano = J_u_func(test_u)
 print 'grad', J_theano
 J_np = np_jac(test_u)
-print 'np grad', J_np
+#print 'np grad', J_np
 print 'ok?', np.allclose(J_theano, J_np)
 
-print 'rigidity cost'
 cost_rigidity = (J_u**2).sum()
 cost_rigidity_func = theano.function([u], cost_rigidity)
+print 'rigidity cost'
 print '= ', cost_rigidity_func(test_u)
 print 'np rigidity cost', (J_np**2).sum()
 
 print 'rigidity gradient'
 cost_rigidity_grad = T.grad(cost_rigidity, u)
-print pp(cost_rigidity_grad)
+#print pp(cost_rigidity_grad)
 theano_gval = theano.function([u], cost_rigidity_grad)(test_u)
 print theano_gval
 
