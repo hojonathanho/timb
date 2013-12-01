@@ -194,6 +194,18 @@ void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
   }
 }
 
+template<typename ElemT, typename ExprT>
+void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, const DoubleField& u_y, ScalarField<ExprT, ExprT>& out) {
+  const GridParams& gp = phi.grid_params();
+  assert(u_x.grid_params() == gp && u_y.grid_params() == gp && out.grid_params() == gp);
+
+  for (int i = 0; i < gp.nx; ++i) {
+    for (int j = 0; j < gp.ny; ++j) {
+      auto xy = phi.to_xy(i, j);
+      out(i,j) = phi.eval_xy(xy.first - u_x(i,j), xy.second - u_y(i,j));
+    }
+  }
+}
 
 
 struct FlowRigidityCost : public QuadraticCostFunc {
@@ -229,37 +241,23 @@ struct FlowNormCost : public QuadraticCostFunc {
   }
 };
 
-struct ObservationCost : public QuadraticCostFunc {
-  const VarField& m_phi;
-  ObservationCost(const VarField& phi) : m_phi(phi), QuadraticCostFunc("obs") { }
+struct ObservationCost : public CostFunc {
+  const VarField& m_phi, m_u_x, m_u_y;
 
-  void set_obs_pts(const MatrixX2d& pts) {
-    QuadExpr expr;
-    for (int i = 0; i < pts.rows(); ++i) {
-      AffExpr e = m_phi.eval_xy(pts(i,0), pts(i,1));
-      // TODO: cleanup
-      exprInc(expr, exprSquare(e));
-    }
-    init_from_expr(expr);
-  }
-};
-
-
-struct PhiAgreementCost : public CostFunc {
-  VarField m_phi, m_u_x, m_u_y;
-  DoubleField m_prev_phi_vals;
-
+  DoubleField m_vals, m_mask;
   DoubleField m_tmp_phi_vals, m_tmp_u_x_vals, m_tmp_u_y_vals;
+  AffExprField m_tmp_curr_phi;
 
-  PhiAgreementCost(const VarField& phi, const VarField& u_x, const VarField& u_y)
+  ObservationCost(const VarField& phi, const VarField& u_x, const VarField& u_y)
     : m_phi(phi), m_u_x(u_x), m_u_y(u_y),
+      m_vals(phi.grid_params()), m_mask(phi.grid_params()),
       m_tmp_phi_vals(phi.grid_params()), m_tmp_u_x_vals(phi.grid_params()), m_tmp_u_y_vals(phi.grid_params()),
-      m_prev_phi_vals(phi.grid_params()),
-      CostFunc("phi_agreement")
-  { }
+      m_tmp_curr_phi(phi.grid_params()),
+      CostFunc("obs") { }
 
-  void set_prev_phi(const DoubleField& prev_phi) {
-    m_prev_phi_vals = prev_phi;
+  void set_from_vals_and_mask(const DoubleField& vals, const DoubleField& mask) {
+    m_vals = vals;
+    m_mask = mask;
   }
 
   virtual double eval(const VectorXd& x) {
@@ -268,12 +266,16 @@ struct PhiAgreementCost : public CostFunc {
     extract_values(x, m_u_x, m_tmp_u_x_vals);
     extract_values(x, m_u_y, m_tmp_u_y_vals);
 
+    // if mask[i] is true, then put a cost on (new_phi[i] - vals[i])^2
+    // where new_phi[i] = flowed phi by u
+    // TODO: use apply_flow
     double cost = 0.;
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
+        if (m_mask(i,j) == 0) continue;
         auto xy = m_phi.to_xy(i, j);
-        double flowed_prev_phi_val = m_prev_phi_vals.eval_xy(xy.first - m_tmp_u_x_vals(i,j), xy.second - m_tmp_u_y_vals(i,j));
-        cost += square(m_tmp_phi_vals(i,j) - flowed_prev_phi_val);
+        double flowed_prev_phi_val = m_tmp_phi_vals.eval_xy(xy.first - m_tmp_u_x_vals(i,j), xy.second - m_tmp_u_y_vals(i,j));
+        cost += square(flowed_prev_phi_val - m_vals(i,j));
       }
     }
     return cost;
@@ -285,15 +287,20 @@ struct PhiAgreementCost : public CostFunc {
     extract_values(x, m_u_x, m_tmp_u_x_vals);
     extract_values(x, m_u_y, m_tmp_u_y_vals);
 
+    // m_tmp_curr_phi is a 'scalar field' of expressions
+    // that represents the current TSDF with the flow field held fixed
+    apply_flow(m_phi, m_tmp_u_x_vals, m_tmp_u_y_vals, m_tmp_curr_phi);
+
     QuadExpr expr;
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
+        if (m_mask(i,j) == 0) continue;
         auto xy = m_phi.to_xy(i, j);
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
-        double constant = m_prev_phi_vals.eval_xy(flowed_x, flowed_y);
-        auto prev_phi_grad = m_prev_phi_vals.grad_xy(flowed_x, flowed_y);
-        AffExpr e = m_phi(i,j) + prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) + prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j)) - constant;
-        exprInc(expr, exprSquare(e));
+        //double constant = m_tmp_phi_vals.eval_xy(flowed_x, flowed_y);
+        auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
+        AffExpr val = m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j));
+        exprInc(expr, exprSquare(val - m_vals(i,j)));
       }
     }
 
@@ -301,6 +308,23 @@ struct PhiAgreementCost : public CostFunc {
   }
 };
 
+struct PriorCost : public QuadraticCostFunc {
+  const VarField& m_phi;
+  PriorCost(const VarField& phi) : m_phi(phi), QuadraticCostFunc("prior") { }
+
+  void set_prior(const DoubleField& mean, const DoubleField& omega) {
+    const GridParams& p = m_phi.grid_params();
+    assert(mean.grid_params() == p && omega.grid_params() == p);
+
+    QuadExpr expr;
+    for (int i = 0; i < p.nx; ++i) {
+      for (int j = 0; j < p.ny; ++j) {
+        exprInc(expr, omega(i,j)*exprSquare(m_phi(i,j) - mean(i,j)));
+      }
+    }
+    init_from_expr(expr);
+  }
+};
 
 struct TrackingProblemContext {
   const GridParams grid_params;
@@ -313,14 +337,16 @@ struct TrackingProblemCoeffs {
   double flow_norm;
   double flow_rigidity;
   double observation;
-  double phi_agreement;
+  double prior;
 };
 typedef boost::shared_ptr<TrackingProblemCoeffs> TrackingProblemCoeffsPtr;
 
 struct TrackingProblemResult {
-  DoubleField phi, u_x, u_y;
+  DoubleField phi;
+  DoubleField u_x, u_y;
+  DoubleField next_phi, next_omega;
   OptResultPtr opt_result;
-  TrackingProblemResult(const GridParams& gp) : phi(gp), u_x(gp), u_y(gp) { }
+  TrackingProblemResult(const GridParams& gp) : phi(gp), u_x(gp), u_y(gp), next_phi(gp), next_omega(gp) { }
 };
 typedef boost::shared_ptr<TrackingProblemResult> TrackingProblemResultPtr;
 
@@ -335,16 +361,16 @@ public:
 
   TrackingProblemCoeffsPtr m_coeffs; // cost coefficients
 
-  void set_observation_points(const MatrixX2d& pts) {
-    // std::cout << "Got obs points:\n" << pts << std::endl;
-    ((ObservationCost&) *m_observation_cost).set_obs_pts(pts);
+  void set_obs_vals(const DoubleField& vals, const DoubleField& mask) {
+    // TODO
   }
 
-  void set_prev_phi(const DoubleField& other) {
-    assert(other.grid_params() == m_ctx->grid_params);
-    // std::cout << "Got prev phi:\n" << other << std::endl;
-    m_prev_phi.reset(new DoubleField(other));
-    ((PhiAgreementCost&) *m_phi_agreement_cost).set_prev_phi(other);
+  void set_prior(const DoubleField& phi_mean, const DoubleField& omega) {
+    // TODO
+    assert(phi_mean.grid_params() == m_ctx->grid_params && omega.grid_params() == m_ctx->grid_params);
+    m_phi_mean.reset(new DoubleField(phi_mean));
+    m_omega.reset(new DoubleField(omega));
+    ((PriorCost&) *m_prior_cost).set_prior(phi_mean, omega);
   }
 
   TrackingProblemResultPtr optimize() {
@@ -352,10 +378,10 @@ public:
 
     VectorXd init_x(VectorXd::Zero(m_opt->num_vars())); // TODO: allocate once only
     int k = 0;
-    // initial value for phi is prev_phi
+    // initial value for phi is the mean
     for (int i = 0; i < m_ctx->grid_params.nx; ++i) {
       for (int j = 0; j < m_ctx->grid_params.ny; ++j) {
-        init_x(k++) = (*m_prev_phi)(i,j);
+        init_x(k++) = (*m_phi_mean)(i,j);
       }
     }
     // initialize with zero flow field
@@ -381,6 +407,10 @@ public:
         out->u_y(i,j) = result->x(k++);
       }
     }
+    // compute new phi and omega from result
+    apply_flow(out->phi, out->u_x, out->u_y, out->next_phi);
+    apply_flow(*m_omega, out->u_x, out->u_y, out->next_omega);
+
     return out;
   }
 
@@ -391,10 +421,10 @@ protected:
   CostFuncPtr m_flow_norm_cost;
   CostFuncPtr m_flow_rigidity_cost;
   CostFuncPtr m_observation_cost;
-  CostFuncPtr m_phi_agreement_cost;
+  CostFuncPtr m_prior_cost;
 
   // cost parameters and initial guess for optimization
-  DoubleFieldPtr m_prev_phi;
+  DoubleFieldPtr m_phi_mean, m_omega;
 
   void init(TrackingProblemContextPtr ctx) {
     // default cost coefficients
@@ -402,7 +432,7 @@ protected:
     m_coeffs->flow_norm = 1e-9;
     m_coeffs->flow_rigidity = 1e-3;
     m_coeffs->observation = 1.;
-    m_coeffs->phi_agreement = 1.;
+    m_coeffs->prior = 1.;
 
     // set up optimization problem and variables
     m_ctx = ctx;
@@ -415,12 +445,12 @@ protected:
     // set up cost objects
     m_flow_norm_cost.reset(new FlowNormCost(m_ctx->u_x, m_ctx->u_y));
     m_flow_rigidity_cost.reset(new FlowRigidityCost(m_ctx->u_x, m_ctx->u_y));
-    m_observation_cost.reset(new ObservationCost(m_ctx->phi));
-    m_phi_agreement_cost.reset(new PhiAgreementCost(m_ctx->phi, m_ctx->u_x, m_ctx->u_y));
+    m_observation_cost.reset(new ObservationCost(m_ctx->phi, m_ctx->u_x, m_ctx->u_y));
+    m_prior_cost.reset(new PriorCost(m_ctx->phi));
     m_opt->add_cost(m_flow_norm_cost);
     m_opt->add_cost(m_flow_rigidity_cost);
     m_opt->add_cost(m_observation_cost);
-    m_opt->add_cost(m_phi_agreement_cost);
+    m_opt->add_cost(m_prior_cost);
     set_coeffs();
   }
 
@@ -429,7 +459,7 @@ protected:
     m_opt->set_cost_coeff(m_flow_norm_cost, m_coeffs->flow_norm);
     m_opt->set_cost_coeff(m_flow_rigidity_cost, m_coeffs->flow_rigidity);
     m_opt->set_cost_coeff(m_observation_cost, m_coeffs->observation);
-    m_opt->set_cost_coeff(m_phi_agreement_cost, m_coeffs->phi_agreement);
+    m_opt->set_cost_coeff(m_prior_cost, m_coeffs->prior);
   }
 };
 typedef boost::shared_ptr<TrackingProblem> TrackingProblemPtr;
