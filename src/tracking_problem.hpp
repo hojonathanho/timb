@@ -22,6 +22,12 @@ struct GridParams {
       eps_x((xmax_ - xmin_)/(nx_ - 1.)),
       eps_y((ymax_ - ymin_)/(ny_ - 1.))
   { }
+  std::pair<double, double> to_xy(double i, double j) const {
+    return std::make_pair(xmin + i*eps_x, ymin + j*eps_y);
+  }
+  std::pair<double, double> to_ij(double x, double y) const {
+    return std::make_pair((x - xmin)/eps_x, (y - ymin)/eps_y);
+  }
 };
 bool operator==(const GridParams& a, const GridParams& b) {
   return
@@ -50,14 +56,6 @@ public:
   typedef boost::shared_ptr<ScalarField<ElemT, ExprT> > Ptr;
   struct ExprVec { ExprT x, y; };
 
-  std::pair<double, double> to_xy(double i, double j) const {
-    return std::make_pair(m_grid_params.xmin + i*m_grid_params.eps_x, m_grid_params.ymin + j*m_grid_params.eps_y);
-  }
-
-  std::pair<double, double> to_ij(double x, double y) const {
-    return std::make_pair((x - m_grid_params.xmin)/m_grid_params.eps_x, (y - m_grid_params.ymin)/m_grid_params.eps_y);
-  }
-
   const ElemT& get(int i, int j) const {
     assert(0 <= i && i < m_grid_params.nx && 0 <= j && j < m_grid_params.ny);
     return m_data[i*m_grid_params.ny + j];
@@ -82,7 +80,7 @@ public:
   }
 
   ExprT eval_xy(double x, double y) const {
-    std::pair<double, double> p = to_ij(x, y);
+    std::pair<double, double> p = m_grid_params.to_ij(x, y);
     return eval_ij(p.first, p.second);
   }
 
@@ -96,7 +94,7 @@ public:
   }
 
   ExprVec grad_xy(double x, double y) const {
-    std::pair<double, double> p = to_ij(x, y);
+    std::pair<double, double> p = m_grid_params.to_ij(x, y);
     return grad_ij(p.first, p.second);
   }
 
@@ -201,7 +199,7 @@ void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, co
 
   for (int i = 0; i < gp.nx; ++i) {
     for (int j = 0; j < gp.ny; ++j) {
-      auto xy = phi.to_xy(i, j);
+      auto xy = gp.to_xy(i, j);
       out(i,j) = phi.eval_xy(xy.first - u_x(i,j), xy.second - u_y(i,j));
     }
   }
@@ -244,14 +242,18 @@ struct FlowNormCost : public QuadraticCostFunc {
 struct ObservationCost : public CostFunc {
   const VarField& m_phi, m_u_x, m_u_y;
 
+  // cost parameters
   DoubleField m_vals, m_mask;
+
+  // temporary memory for eval() and quadratic()
   DoubleField m_tmp_phi_vals, m_tmp_u_x_vals, m_tmp_u_y_vals;
   AffExprField m_tmp_curr_phi;
 
   ObservationCost(const VarField& phi, const VarField& u_x, const VarField& u_y)
     : m_phi(phi), m_u_x(u_x), m_u_y(u_y),
       m_vals(phi.grid_params()), m_mask(phi.grid_params()),
-      m_tmp_phi_vals(phi.grid_params()), m_tmp_u_x_vals(phi.grid_params()), m_tmp_u_y_vals(phi.grid_params()),
+      m_tmp_phi_vals(phi.grid_params()),
+      m_tmp_u_x_vals(phi.grid_params()), m_tmp_u_y_vals(phi.grid_params()),
       m_tmp_curr_phi(phi.grid_params()),
       CostFunc("obs") { }
 
@@ -273,7 +275,7 @@ struct ObservationCost : public CostFunc {
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
         if (m_mask(i,j) == 0) continue;
-        auto xy = m_phi.to_xy(i, j);
+        auto xy = gp.to_xy(i, j);
         double flowed_prev_phi_val = m_tmp_phi_vals.eval_xy(xy.first - m_tmp_u_x_vals(i,j), xy.second - m_tmp_u_y_vals(i,j));
         cost += square(flowed_prev_phi_val - m_vals(i,j));
       }
@@ -296,7 +298,7 @@ struct ObservationCost : public CostFunc {
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
         if (m_mask(i,j) == 0) continue;
-        auto xy = m_phi.to_xy(i, j);
+        auto xy = gp.to_xy(i, j);
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
         auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
         AffExpr val = m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j));
@@ -361,12 +363,12 @@ public:
 
   TrackingProblemCoeffsPtr m_coeffs; // cost coefficients
 
-  void set_obs_vals(const DoubleField& vals, const DoubleField& mask) {
-    // TODO
+  void set_obs(const DoubleField& vals, const DoubleField& mask) {
+    assert(vals.grid_params() == m_ctx->grid_params && mask.grid_params() == m_ctx->grid_params);
+    ((ObservationCost&) *m_observation_cost).set_from_vals_and_mask(vals, mask);
   }
 
   void set_prior(const DoubleField& phi_mean, const DoubleField& omega) {
-    // TODO
     assert(phi_mean.grid_params() == m_ctx->grid_params && omega.grid_params() == m_ctx->grid_params);
     m_phi_mean.reset(new DoubleField(phi_mean));
     m_omega.reset(new DoubleField(omega));

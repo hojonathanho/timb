@@ -35,11 +35,11 @@ class PyTrackingProblem : public TrackingProblem {
 public:
   PyTrackingProblem(double xmin_, double xmax_, double ymin_, double ymax_, int nx_, int ny_) : TrackingProblem(xmin_, xmax_, ymin_, ymax_, nx_, ny_) { }
 
-  void py_set_obs_vals(py::object py_vals, py::object py_mask) {
+  void py_set_obs(py::object py_vals, py::object py_mask) {
     DoubleField vals(m_ctx->grid_params), mask(m_ctx->grid_params);
     to_scalar_field(py_vals, vals);
     to_scalar_field(py_mask, mask);
-    set_obs_vals(vals, mask);
+    set_obs(vals, mask);
   }
 
   void py_set_prior(py::object py_mean, py::object py_omega) {
@@ -86,7 +86,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     ;
 
   py::class_<PyTrackingProblem, PyTrackingProblemPtr>("TrackingProblem", py::init<double, double, double, double, int, int>())
-    .def("set_obs_vals", &PyTrackingProblem::py_set_obs_vals)
+    .def("set_obs", &PyTrackingProblem::py_set_obs)
     .def("set_prior", &PyTrackingProblem::py_set_prior)
     .def_readwrite("coeffs", &PyTrackingProblem::m_coeffs)
     .def("optimize", &PyTrackingProblem::py_optimize)
