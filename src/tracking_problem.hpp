@@ -287,17 +287,17 @@ struct ObservationCost : public CostFunc {
     extract_values(x, m_u_x, m_tmp_u_x_vals);
     extract_values(x, m_u_y, m_tmp_u_y_vals);
 
-    // m_tmp_curr_phi is a 'scalar field' of expressions
+    // m_tmp_curr_phi is a scalar field of expressions
     // that represents the current TSDF with the flow field held fixed
     apply_flow(m_phi, m_tmp_u_x_vals, m_tmp_u_y_vals, m_tmp_curr_phi);
 
     QuadExpr expr;
+    // add on contributions from linearizing wrt u
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
         if (m_mask(i,j) == 0) continue;
         auto xy = m_phi.to_xy(i, j);
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
-        //double constant = m_tmp_phi_vals.eval_xy(flowed_x, flowed_y);
         auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
         AffExpr val = m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j));
         exprInc(expr, exprSquare(val - m_vals(i,j)));
