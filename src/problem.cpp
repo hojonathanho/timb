@@ -91,6 +91,8 @@ struct OptimizerImpl {
   vector<double> m_cost_coeffs;
   map<CostFuncPtr, int> m_cost2idx;
 
+  vector<Optimizer::Callback> m_callbacks;
+
   int num_vars() const { return m_var_factory.num_vars(); }
 
   void add_vars(const StrVec& names, vector<Var>& out) {
@@ -110,6 +112,10 @@ struct OptimizerImpl {
     m_cost_coeffs[m_cost2idx[cost]] = coeff;
   }
 
+  void add_callback(Optimizer::Callback fn) {
+    m_callbacks.push_back(fn);
+  }
+
   void convexify_costs(const VectorXd& x, vector<QuadFunctionPtr>& out) {
     LOG_DEBUG("Convexifying costs:");
     out.resize(m_costs.size());
@@ -125,8 +131,8 @@ struct OptimizerImpl {
     LOG_DEBUG("Evaluating model costs:");
     assert(out.size() == m_costs.size() && out.size() == quad_costs.size());
     for (int i = 0; i < quad_costs.size(); ++i) {
-      LOG_DEBUG("\t%s", m_costs[i]->name().c_str());
       out[i] = m_cost_coeffs[i] * quad_costs[i]->value(x);
+      LOG_DEBUG("\t%s: %f", m_costs[i]->name().c_str(), out[i]);
     }
     LOG_DEBUG("Done");
   }
@@ -135,8 +141,8 @@ struct OptimizerImpl {
     LOG_DEBUG("Evaluating true costs:");
     assert(out.size() == m_costs.size());
     for (int i = 0; i < m_costs.size(); ++i) {
-      LOG_DEBUG("\t%s", m_costs[i]->name().c_str());
       out[i] = m_cost_coeffs[i] * m_costs[i]->eval(x);
+      LOG_DEBUG("\t%s: %f", m_costs[i]->name().c_str(), out[i]);
     }
     LOG_DEBUG("Done");
   }
@@ -176,7 +182,8 @@ struct OptimizerImpl {
     vector<QuadFunctionPtr> quad_costs(m_costs.size(), QuadFunctionPtr());
     VectorXd quad_cost_vals(VectorXd::Zero(m_costs.size()));
     VectorXd new_cost_vals(VectorXd::Zero(m_costs.size()));
-    Eigen::ConjugateGradient<QuadFunction::SparseMatrixT, Eigen::Lower> solver;
+    //Eigen::ConjugateGradient<QuadFunction::SparseMatrixT, Eigen::Lower> solver;
+    Eigen::SimplicialLDLT<QuadFunction::SparseMatrixT, Eigen::Lower> solver;
     QuadFunction::SparseMatrixT quad_A_lower(num_vars(), num_vars());
     VectorXd quad_b(VectorXd::Zero(num_vars()));
     double quad_c = 0.;
@@ -186,6 +193,10 @@ struct OptimizerImpl {
     int iter = 0;
     while (true) {
       convexify_costs(result->x, quad_costs);
+
+      for (auto fn : m_callbacks) {
+        fn(result->x);
+      }
 
       // trust region loop
       trust_region.set_center(result->x);
@@ -199,13 +210,14 @@ struct OptimizerImpl {
           quad_costs[i]->add_to(quad_A_lower, quad_b, quad_c, m_cost_coeffs[i]);
         }
         trust_region.add_to(quad_A_lower, quad_b, quad_c);
-        quad_A_lower.makeCompressed(); // TODO: every iteration?
+        //quad_A_lower.makeCompressed(); // TODO: every iteration?
         LOG_DEBUG("Done building quadratic problem");
 
         // solve the quadratic subproblem
         LOG_DEBUG("Solving subproblem");
         solver.compute(quad_A_lower);
-        new_x = solver.solveWithGuess(-quad_b, result->x); // TODO: warm start and early termination
+        //new_x = solver.solveWithGuess(-quad_b, result->x); // TODO: warm start and early termination
+        new_x = solver.solve(-quad_b);
         ++result->n_qp_solves;
         LOG_DEBUG("Done solving subproblem");
 
@@ -276,4 +288,5 @@ int Optimizer::num_vars() const { return m_impl->num_vars(); }
 void Optimizer::add_vars(const vector<string>& names, vector<Var>& out) { m_impl->add_vars(names, out); }
 void Optimizer::add_cost(CostFuncPtr cost, double coeff) { m_impl->add_cost(cost, coeff); }
 void Optimizer::set_cost_coeff(CostFuncPtr cost, double coeff) { m_impl->set_cost_coeff(cost, coeff); }
+void Optimizer::add_callback(const Callback &fn) { m_impl->add_callback(fn); }
 OptResultPtr Optimizer::optimize(const VectorXd& start_x) { return m_impl->optimize(start_x); }

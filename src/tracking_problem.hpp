@@ -4,6 +4,7 @@
 #include "expr.hpp"
 #include "numpy_utils.hpp"
 #include "problem.hpp"
+#include <boost/bind.hpp>
 
 template<typename T>
 inline T clip(T x, T lo, T hi) {
@@ -212,7 +213,7 @@ void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, co
 
 
 struct FlowRigidityCost : public QuadraticCostFunc {
-  FlowRigidityCost(const VarField& u_x, const VarField& u_y) : QuadraticCostFunc("rigidity") {
+  FlowRigidityCost(const VarField& u_x, const VarField& u_y) : QuadraticCostFunc("flow_rigidity") {
     const GridParams& p = u_x.grid_params();
     AffExprField u_x_x(p), u_x_y(p), u_y_x(p), u_y_y(p);
     gradient(u_x, u_x_x, u_x_y);
@@ -324,7 +325,7 @@ struct ObservationCost : public CostFunc {
     return QuadFunctionPtr(new QuadFunction(expr));
 */
 
-    m_tmp_curr_phi = linearize_curr_phi(x);
+    linearize_curr_phi(x, m_tmp_curr_phi);
 
     QuadExpr expr;
     for (int i = 0; i < gp.nx; ++i) {
@@ -334,6 +335,7 @@ struct ObservationCost : public CostFunc {
         exprInc(expr, exprSquare(m_tmp_curr_phi(i,j) - m_vals(i,j)));
       }
     }
+    std::cout << "quad: " << expr.value(x) << " true: " << eval(x) << std::endl;
     return QuadFunctionPtr(new QuadFunction(expr));
 
   }
@@ -341,18 +343,17 @@ struct ObservationCost : public CostFunc {
 
 private:
   // numerically linearize flowed SDF
-  AffExprField linearize_curr_phi(const VectorXd& x) {
-    assert(g_all_vars.size() == x.size());
-    AffExprField out(m_phi.grid_params());
+  void linearize_curr_phi(const VectorXd& x, AffExprField& out) {
+    assert(g_all_vars.size() == x.size() && out.grid_params() == m_phi.grid_params());
     DoubleField c(apply_flow_x(x));
     for (int i = 0; i < m_phi.grid_params().nx; ++i) {
       for (int j = 0; j < m_phi.grid_params().ny; ++j) {
-        exprInc(out(i,j), c(i,j));
+        out(i,j) = AffExpr(c(i,j));
       }
     }
 
     VectorXd tmp_x(x);
-    double eps = 1e-5;
+    double eps = 1e-7;
     for (int z = 0; z < x.size(); ++z) {
       tmp_x(z) = x(z) + eps;
       DoubleField b(apply_flow_x(tmp_x));
@@ -375,7 +376,6 @@ private:
         out(i,j) = cleanupAff(out(i,j));
       }
     }
-    return out;
   }
 
   // for numdiff: extract variable values and produce the flowed SDF
@@ -511,7 +511,7 @@ protected:
   void init(TrackingProblemContextPtr ctx) {
     // default cost coefficients
     m_coeffs.reset(new TrackingProblemCoeffs);
-    m_coeffs->flow_norm = 1e-9;
+    m_coeffs->flow_norm = 1e-2;
     m_coeffs->flow_rigidity = 1e-3;
     m_coeffs->observation = 1.;
     m_coeffs->prior = 1.;
@@ -534,6 +534,8 @@ protected:
     m_opt->add_cost(m_observation_cost);
     m_opt->add_cost(m_prior_cost);
     set_coeffs();
+
+    m_opt->add_callback(boost::bind(&TrackingProblem::print_vals, this, _1));
   }
 
   // copy cost coefficients over into the optimizer
@@ -542,6 +544,16 @@ protected:
     m_opt->set_cost_coeff(m_flow_rigidity_cost, m_coeffs->flow_rigidity);
     m_opt->set_cost_coeff(m_observation_cost, m_coeffs->observation);
     m_opt->set_cost_coeff(m_prior_cost, m_coeffs->prior);
+  }
+
+  void print_vals(const VectorXd& x) {
+    DoubleField tmp_phi_vals(m_ctx->grid_params), tmp_u_x_vals(m_ctx->grid_params), tmp_u_y_vals(m_ctx->grid_params);
+    extract_values(x, m_ctx->phi, tmp_phi_vals);
+    extract_values(x, m_ctx->u_x, tmp_u_x_vals);
+    extract_values(x, m_ctx->u_y, tmp_u_y_vals);
+    std::cout << "=== phi ===\n" << tmp_phi_vals << '\n';
+    std::cout << "=== u_x ===\n" << tmp_u_x_vals << '\n';
+    std::cout << "=== u_y ===\n" << tmp_u_y_vals << '\n';
   }
 };
 typedef boost::shared_ptr<TrackingProblem> TrackingProblemPtr;

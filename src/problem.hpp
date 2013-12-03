@@ -2,6 +2,7 @@
 
 #include "common.hpp"
 #include "expr.hpp"
+#include <boost/function.hpp>
 
 class QuadFunction {
 public:
@@ -22,7 +23,16 @@ public:
     // otherwise just call the quad expr's evaluate method
     if (m_initialized) {
       assert(x.size() == m_b.size());
-      return .5*x.dot(A()*x) + m_b.dot(x) + m_c;
+      double z1 = .5*x.dot(A()*x) + m_b.dot(x) + m_c;
+      double z2 = m_quad_expr.value(x);
+      std::cout << "============ " << z1 << ' ' << z2 << " ============" << std::endl;
+      if (abs(z1 - z2) > 1e-2) {
+        std::cout << " HOLY FUCK " << std::endl;
+        std::cout << "A:\n" << A() << std::endl;
+        std::cout << "b: " << b().transpose() << std::endl;
+        std::cout << "c: " << c() << std::endl;
+        std::cout << "expr: " << expr() << std::endl;
+      }
     }
     return m_quad_expr.value(x);
   }
@@ -53,19 +63,23 @@ private:
     triplets.reserve(expr.size());
     for (int i = 0; i < expr.size(); ++i) {
       int ind1 = expr.vars1[i].rep->index, ind2 = expr.vars2[i].rep->index;
-      // only fill in lower diagonal
+      // only fill in lower triangle
       if (ind1 < ind2) { std::swap(ind1, ind2); }
       double coeff = expr.coeffs[i];
       if (ind1 == ind2) { coeff *= 2; }
       triplets.push_back(T(ind1, ind2, coeff));
     }
+    // for (int i = 0; i < expr.size(); ++i) {
+    //   int ind1 = expr.vars1[i].rep->index, ind2 = expr.vars2[i].rep->index;
+    //   triplets.push_back(T(ind1, ind2, expr.coeffs[i]/2));
+    // }
     m_A.setFromTriplets(triplets.begin(), triplets.end());
 
     // affine part
     m_b.resize(num_vars);
     m_b.setZero();
     for (int i = 0; i < expr.affexpr.size(); ++i) {
-      m_b(expr.affexpr.vars[i].rep->index) = expr.affexpr.coeffs[i];
+      m_b(expr.affexpr.vars[i].rep->index) += expr.affexpr.coeffs[i];
     }
     m_c = expr.affexpr.constant;
 
@@ -145,6 +159,9 @@ public:
   void add_vars(const StrVec& names, vector<Var>& out);
   void add_cost(CostFuncPtr cost, double coeff=1.);
   void set_cost_coeff(CostFuncPtr cost, double coeff);
+
+  typedef boost::function<void(const VectorXd&)> Callback;
+  void add_callback(const Callback &fn);
 
   int num_vars() const;
 
