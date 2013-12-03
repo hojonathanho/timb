@@ -175,6 +175,7 @@ void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S,
   }
 }
 
+vector<Var> g_all_vars;
 void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
   vector<string> names;
   for (int i = 0; i < f.grid_params().nx; ++i) {
@@ -189,6 +190,10 @@ void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
     for (int j = 0; j < f.grid_params().ny; ++j) {
       f(i,j) = vars[k++];
     }
+  }
+
+  for (int i = 0; i < vars.size(); ++i) {
+    g_all_vars.push_back(vars[i]);
   }
 }
 
@@ -289,6 +294,7 @@ struct ObservationCost : public CostFunc {
     extract_values(x, m_u_x, m_tmp_u_x_vals);
     extract_values(x, m_u_y, m_tmp_u_y_vals);
 
+/*
     // m_tmp_curr_phi is a scalar field of expressions
     // that represents the current TSDF with the flow field held fixed
     apply_flow(m_phi, m_tmp_u_x_vals, m_tmp_u_y_vals, m_tmp_curr_phi);
@@ -302,11 +308,96 @@ struct ObservationCost : public CostFunc {
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
         auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
         AffExpr val = m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j));
+        
+        /////////////////// DEBUGGING
+        std::cout << i << ' ' << j << ": " << m_tmp_curr_phi(i,j) << " | " << val << std::endl;
+        std::cout << "convex value: " << exprSquare(val - m_vals(i,j)).value(x) << std::endl;
+        double flowed_prev_phi_val = m_tmp_phi_vals.eval_xy(xy.first - m_tmp_u_x_vals(i,j), xy.second - m_tmp_u_y_vals(i,j));
+        double zzzz = square(flowed_prev_phi_val - m_vals(i,j));
+        std::cout << "actual value: " << zzzz << std::endl;
+        //////////////////////
+
         exprInc(expr, exprSquare(val - m_vals(i,j)));
       }
     }
 
     return QuadFunctionPtr(new QuadFunction(expr));
+*/
+
+
+    // linearize flowed phi at x
+    // flowed phi = f(phi, u) = f(phi0, u0) + f_phi*(phi - phi0) + f_u*(u - u0)
+
+
+
+
+/*
+    // constant term
+    for (int i = 0; i < gp.nx; ++i) {
+      for (int j = 0; j < gp.ny; ++j) {
+        auto xy = gp.to_xy(i, j);
+        double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
+        m_tmp_phi_vals.eval_xy(flowed_x, flowed_y);
+        auto grad_u = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
+        AffExpr e = -grad_u.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - grad_u.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j)) + m_tmp_phi_vals.eval_xy(flowed_x, flowed_y);
+        m_tmp_curr_phi(i,j) = e;
+        std::cout << e << std::endl;
+      }
+    }*/
+    m_tmp_curr_phi = linearize_curr_phi(x);
+
+    QuadExpr expr;
+    for (int i = 0; i < gp.nx; ++i) {
+      for (int j = 0; j < gp.ny; ++j) {
+        if (m_mask(i,j) == 0) continue;
+        exprInc(expr, exprSquare(m_tmp_curr_phi(i,j) - m_vals(i,j)));
+      }
+    }
+    return QuadFunctionPtr(new QuadFunction(expr));
+
+  }
+
+
+private:
+  AffExprField linearize_curr_phi(const VectorXd& x) {
+    assert(g_all_vars.size() == x.size());
+    AffExprField out(m_phi.grid_params());
+    DoubleField c(apply_flow_x(x));
+    for (int i = 0; i < m_phi.grid_params().nx; ++i) {
+      for (int j = 0; j < m_phi.grid_params().ny; ++j) {
+        exprInc(out(i,j), c(i,j));
+      }
+    }
+
+    VectorXd tmp_x(x);
+    double eps = 1e-5;
+    for (int z = 0; z < x.size(); ++z) {
+      tmp_x(z) = x(z) + eps;
+      DoubleField b(apply_flow_x(tmp_x));
+
+      tmp_x(z) = x(z) - eps;
+      DoubleField a(apply_flow_x(tmp_x));
+
+      tmp_x(z) = x(z);
+
+      for (int i = 0; i < m_phi.grid_params().nx; ++i) {
+        for (int j = 0; j < m_phi.grid_params().ny; ++j) {
+          double dydx = (b(i,j) - a(i,j)) / (2.*eps);
+          exprInc(out(i,j), dydx*(g_all_vars[z] - x(z)));
+        }
+      }
+    }
+    return out;
+  }
+
+  DoubleField apply_flow_x(const VectorXd &x) {
+    const GridParams& gp = m_phi.grid_params();
+    DoubleField tmp_phi_vals(gp), tmp_u_x_vals(gp), tmp_u_y_vals(gp), out(gp);
+    extract_values(x, m_phi, tmp_phi_vals);
+    extract_values(x, m_u_x, tmp_u_x_vals);
+    extract_values(x, m_u_y, tmp_u_y_vals);
+    apply_flow(tmp_phi_vals, tmp_u_x_vals, tmp_u_y_vals, out);
+    return out;
   }
 };
 

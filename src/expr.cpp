@@ -4,6 +4,28 @@
 
 static inline double sq(double x) { return x*x; }
 
+std::ostream& operator<<(std::ostream& o, const Var& v) {
+  if (v.rep != NULL)
+    o << v.rep->name;
+  else
+    o << "nullvar";
+  return o;
+}
+std::ostream& operator<<(std::ostream& o, const AffExpr& e) {
+  o << e.constant;
+  for (size_t i=0; i < e.size(); ++i) {
+    o << " + " << e.coeffs[i] << "*" << e.vars[i];
+  }
+  return o;
+}
+std::ostream& operator<<(std::ostream& o, const QuadExpr& e) {
+  o << e.affexpr;
+  for (size_t i=0; i < e.size(); ++i) {
+    o << " + " << e.coeffs[i] << "*" << e.vars1[i] << "*" << e.vars2[i];
+  }
+  return o;
+}
+
 QuadExpr exprSquare(const Var& a) {
   QuadExpr out;
   out.coeffs.push_back(1);

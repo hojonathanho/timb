@@ -22,6 +22,10 @@ struct PyTrackingProblemResult {
 
     opt_result = res.opt_result;
   }
+
+  string str() const {
+    
+  }
 };
 typedef boost::shared_ptr<PyTrackingProblemResult> PyTrackingProblemResultPtr;
 
@@ -83,6 +87,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     .def_readwrite("next_phi", &PyTrackingProblemResult::next_phi)
     .def_readwrite("next_omega", &PyTrackingProblemResult::next_omega)
     .def_readonly("opt_result", &PyTrackingProblemResult::opt_result)
+    .def("__str__", &PyTrackingProblemResult::str)
     ;
 
   py::class_<PyTrackingProblem, PyTrackingProblemPtr>("TrackingProblem", py::init<double, double, double, double, int, int>())

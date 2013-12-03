@@ -2,6 +2,7 @@
 
 #include "common.hpp"
 #include <Eigen/Sparse>
+#include <ostream>
 
 struct VarRep {
   VarRep(int _index, const std::string& _name, void* _creator) : index(_index), name(_name), removed(false), creator(_creator) {}
@@ -58,6 +59,12 @@ struct QuadExpr {
   }
 };
 typedef boost::shared_ptr<QuadExpr> QuadExprPtr;
+
+////// Stream operators ///////
+
+std::ostream& operator<<(std::ostream& o, const Var& v);
+std::ostream& operator<<(std::ostream& o, const AffExpr& e);
+std::ostream& operator<<(std::ostream& o, const QuadExpr& e);
 
 ////// In-place operations ///////
 
