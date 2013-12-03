@@ -23,16 +23,7 @@ public:
     // otherwise just call the quad expr's evaluate method
     if (m_initialized) {
       assert(x.size() == m_b.size());
-      double z1 = .5*x.dot(A()*x) + m_b.dot(x) + m_c;
-      double z2 = m_quad_expr.value(x);
-      std::cout << "============ " << z1 << ' ' << z2 << " ============" << std::endl;
-      if (abs(z1 - z2) > 1e-2) {
-        std::cout << " HOLY FUCK " << std::endl;
-        std::cout << "A:\n" << A() << std::endl;
-        std::cout << "b: " << b().transpose() << std::endl;
-        std::cout << "c: " << c() << std::endl;
-        std::cout << "expr: " << expr() << std::endl;
-      }
+      return .5*x.dot(A()*x) + m_b.dot(x) + m_c;
     }
     return m_quad_expr.value(x);
   }
@@ -69,10 +60,6 @@ private:
       if (ind1 == ind2) { coeff *= 2; }
       triplets.push_back(T(ind1, ind2, coeff));
     }
-    // for (int i = 0; i < expr.size(); ++i) {
-    //   int ind1 = expr.vars1[i].rep->index, ind2 = expr.vars2[i].rep->index;
-    //   triplets.push_back(T(ind1, ind2, expr.coeffs[i]/2));
-    // }
     m_A.setFromTriplets(triplets.begin(), triplets.end());
 
     // affine part
@@ -81,6 +68,7 @@ private:
     for (int i = 0; i < expr.affexpr.size(); ++i) {
       m_b(expr.affexpr.vars[i].rep->index) += expr.affexpr.coeffs[i];
     }
+
     m_c = expr.affexpr.constant;
 
     m_initialized = true;

@@ -335,7 +335,6 @@ struct ObservationCost : public CostFunc {
         exprInc(expr, exprSquare(m_tmp_curr_phi(i,j) - m_vals(i,j)));
       }
     }
-    std::cout << "quad: " << expr.value(x) << " true: " << eval(x) << std::endl;
     return QuadFunctionPtr(new QuadFunction(expr));
 
   }
