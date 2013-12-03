@@ -1,5 +1,6 @@
 #include <boost/python.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
+#include <sstream>
 #include "tracking_problem.hpp"
 #include "logging.hpp"
 #include "numpy_utils.hpp"
@@ -21,10 +22,6 @@ struct PyTrackingProblemResult {
     next_omega = util::toNdarray(to_eigen(res.next_omega));
 
     opt_result = res.opt_result;
-  }
-
-  string str() const {
-    
   }
 };
 typedef boost::shared_ptr<PyTrackingProblemResult> PyTrackingProblemResultPtr;
@@ -87,7 +84,6 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     .def_readwrite("next_phi", &PyTrackingProblemResult::next_phi)
     .def_readwrite("next_omega", &PyTrackingProblemResult::next_omega)
     .def_readonly("opt_result", &PyTrackingProblemResult::opt_result)
-    .def("__str__", &PyTrackingProblemResult::str)
     ;
 
   py::class_<PyTrackingProblem, PyTrackingProblemPtr>("TrackingProblem", py::init<double, double, double, double, int, int>())

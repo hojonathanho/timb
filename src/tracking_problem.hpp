@@ -324,32 +324,13 @@ struct ObservationCost : public CostFunc {
     return QuadFunctionPtr(new QuadFunction(expr));
 */
 
-
-    // linearize flowed phi at x
-    // flowed phi = f(phi, u) = f(phi0, u0) + f_phi*(phi - phi0) + f_u*(u - u0)
-
-
-
-
-/*
-    // constant term
-    for (int i = 0; i < gp.nx; ++i) {
-      for (int j = 0; j < gp.ny; ++j) {
-        auto xy = gp.to_xy(i, j);
-        double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
-        m_tmp_phi_vals.eval_xy(flowed_x, flowed_y);
-        auto grad_u = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
-        AffExpr e = -grad_u.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - grad_u.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j)) + m_tmp_phi_vals.eval_xy(flowed_x, flowed_y);
-        m_tmp_curr_phi(i,j) = e;
-        std::cout << e << std::endl;
-      }
-    }*/
     m_tmp_curr_phi = linearize_curr_phi(x);
 
     QuadExpr expr;
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
         if (m_mask(i,j) == 0) continue;
+        std::cout << i << ' ' << j << ": " << m_tmp_curr_phi(i,j) << std::endl;
         exprInc(expr, exprSquare(m_tmp_curr_phi(i,j) - m_vals(i,j)));
       }
     }
@@ -359,6 +340,7 @@ struct ObservationCost : public CostFunc {
 
 
 private:
+  // numerically linearize flowed SDF
   AffExprField linearize_curr_phi(const VectorXd& x) {
     assert(g_all_vars.size() == x.size());
     AffExprField out(m_phi.grid_params());
@@ -387,9 +369,16 @@ private:
         }
       }
     }
+
+    for (int i = 0; i < m_phi.grid_params().nx; ++i) {
+      for (int j = 0; j < m_phi.grid_params().ny; ++j) {
+        out(i,j) = cleanupAff(out(i,j));
+      }
+    }
     return out;
   }
 
+  // for numdiff: extract variable values and produce the flowed SDF
   DoubleField apply_flow_x(const VectorXd &x) {
     const GridParams& gp = m_phi.grid_params();
     DoubleField tmp_phi_vals(gp), tmp_u_x_vals(gp), tmp_u_y_vals(gp), out(gp);

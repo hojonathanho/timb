@@ -2,6 +2,8 @@ import numpy as np
 import interpolation as interp
 import ctimbpy
 
+np.set_printoptions(linewidth=1000)
+
 SIZE = 5
 WORLD_MIN = (0., 0.)
 WORLD_MAX = (SIZE-1., SIZE-1.)
@@ -31,6 +33,14 @@ def test1():
   prob.set_prior(init_phi, init_omega)
 
   result = prob.optimize()
+  print 'phi'
+  print result.phi
+  print 'u'
+  print result.u
+  print 'next_phi'
+  print result.next_phi
+  print 'next_omega'
+  print result.next_omega
 
 if __name__ == '__main__':
   test1()
