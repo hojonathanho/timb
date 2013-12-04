@@ -6,7 +6,7 @@
 #include "problem.hpp"
 #include <boost/bind.hpp>
 
-#define TEST_LINEARIZATION true
+#define TEST_LINEARIZATION 1
 
 template<typename T>
 inline T clip(T x, T lo, T hi) {
