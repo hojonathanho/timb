@@ -6,7 +6,7 @@
 #include "problem.hpp"
 #include <boost/bind.hpp>
 
-#define TEST_LINEARIZATION 1
+#define TEST_LINEARIZATION 0
 
 template<typename T>
 inline T clip(T x, T lo, T hi) {
@@ -523,7 +523,7 @@ protected:
     m_opt->add_cost(m_prior_cost);
     set_coeffs();
 
-    m_opt->add_callback(boost::bind(&TrackingProblem::print_vals, this, _1));
+    // m_opt->add_callback(boost::bind(&TrackingProblem::print_vals, this, _1));
   }
 
   // copy cost coefficients over into the optimizer

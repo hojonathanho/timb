@@ -13,7 +13,7 @@ def state_to_pixel_depth(state):
         break
   return depth
 
-def state_to_tsdf(state, scale=1., trunc=10.):
+def state_to_tsdf(state, scale=1., trunc=10., return_all=False):
   # observe from the left
   # projective point-to-point metric
 
@@ -30,7 +30,10 @@ def state_to_tsdf(state, scale=1., trunc=10.):
         sdf[i,j] = d - j
 
   # scale and truncate
-  return np.clip(scale*sdf, -trunc, trunc)
+  sdf *= scale
+  tsdf = np.clip(sdf, -trunc, trunc)
+  if return_all: return tsdf, sdf
+  return tsdf
 
 def test_simple():
   import matplotlib.pyplot as plt
@@ -70,6 +73,7 @@ def test_load_img():
   plt.contourf(state)
 
   tsdf = state_to_tsdf(state)
+  print np.count_nonzero(abs(tsdf) < 10), tsdf.size
   plt.figure(2)
   plt.axis('equal')
   plt.contour(tsdf, levels=[0])
