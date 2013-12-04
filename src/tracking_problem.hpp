@@ -6,6 +6,8 @@
 #include "problem.hpp"
 #include <boost/bind.hpp>
 
+#define TEST_LINEARIZATION true
+
 template<typename T>
 inline T clip(T x, T lo, T hi) {
   return std::max(std::min(x, hi), lo);
@@ -13,6 +15,7 @@ inline T clip(T x, T lo, T hi) {
 
 template<typename T>
 inline T square(const T& x) { return x*x; }
+
 
 struct GridParams {
   const double xmin, xmax, ymin, ymax;
@@ -176,7 +179,7 @@ void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S,
   }
 }
 
-vector<Var> g_all_vars;
+vector<Var> g_all_vars; // TODO: remove
 void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
   vector<string> names;
   for (int i = 0; i < f.grid_params().nx; ++i) {
@@ -295,10 +298,14 @@ struct ObservationCost : public CostFunc {
     extract_values(x, m_u_x, m_tmp_u_x_vals);
     extract_values(x, m_u_y, m_tmp_u_y_vals);
 
-/*
     // m_tmp_curr_phi is a scalar field of expressions
     // that represents the current TSDF with the flow field held fixed
     apply_flow(m_phi, m_tmp_u_x_vals, m_tmp_u_y_vals, m_tmp_curr_phi);
+
+#if TEST_LINEARIZATION
+    AffExprField numdiff_curr_phi(gp);
+    linearize_curr_phi(x, numdiff_curr_phi);
+#endif
 
     QuadExpr expr;
     // add on contributions from linearizing wrt u
@@ -308,35 +315,17 @@ struct ObservationCost : public CostFunc {
         auto xy = gp.to_xy(i, j);
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
         auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
-        AffExpr val = m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j));
-        
-        /////////////////// DEBUGGING
-        std::cout << i << ' ' << j << ": " << m_tmp_curr_phi(i,j) << " | " << val << std::endl;
-        std::cout << "convex value: " << exprSquare(val - m_vals(i,j)).value(x) << std::endl;
-        double flowed_prev_phi_val = m_tmp_phi_vals.eval_xy(xy.first - m_tmp_u_x_vals(i,j), xy.second - m_tmp_u_y_vals(i,j));
-        double zzzz = square(flowed_prev_phi_val - m_vals(i,j));
-        std::cout << "actual value: " << zzzz << std::endl;
-        //////////////////////
-
+        AffExpr val = cleanupAff(m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j)));
+#if TEST_LINEARIZATION
+        // std::cout << "analytical: " << val << std::endl;
+        // std::cout << "numerical:  " << numdiff_curr_phi(i,j) << '\n' << std::endl;
+        assert(close(val, numdiff_curr_phi(i,j)));
+#endif
         exprInc(expr, exprSquare(val - m_vals(i,j)));
       }
     }
 
     return QuadFunctionPtr(new QuadFunction(expr));
-*/
-
-    linearize_curr_phi(x, m_tmp_curr_phi);
-
-    QuadExpr expr;
-    for (int i = 0; i < gp.nx; ++i) {
-      for (int j = 0; j < gp.ny; ++j) {
-        if (m_mask(i,j) == 0) continue;
-        std::cout << i << ' ' << j << ": " << m_tmp_curr_phi(i,j) << std::endl;
-        exprInc(expr, exprSquare(m_tmp_curr_phi(i,j) - m_vals(i,j)));
-      }
-    }
-    return QuadFunctionPtr(new QuadFunction(expr));
-
   }
 
 
@@ -511,7 +500,7 @@ protected:
     // default cost coefficients
     m_coeffs.reset(new TrackingProblemCoeffs);
     m_coeffs->flow_norm = 1e-2;
-    m_coeffs->flow_rigidity = 1e-3;
+    m_coeffs->flow_rigidity = 1;
     m_coeffs->observation = 1.;
     m_coeffs->prior = 1.;
 

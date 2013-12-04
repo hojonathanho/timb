@@ -99,5 +99,42 @@ def test2():
   # assert abs(desired - result.next_phi).max() < 1e-3
 
 
+def test_should_move():
+  SIZE = 5
+  WORLD_MIN = (0., 0.)
+  WORLD_MAX = (SIZE-1., SIZE-1.)
+
+  # initial state: zero precision
+  init_phi = np.array([
+    [0, 2, 1, 0, 0],
+    [0, 2, 1, 0, 0],
+    [0, 2, 1, 0, 0],
+    [0, 2, 1, 0, 0],
+    [0, 2, 1, 0, 0]
+  ]).astype(float)
+  init_omega = np.zeros((SIZE, SIZE)); init_omega.fill(100)
+  obs_mask = np.array([
+    [1, 1, 0, 0, 0],
+    [1, 1, 0, 0, 0],
+    [1, 1, 0, 0, 0],
+    [1, 1, 0, 0, 0],
+    [1, 1, 0, 0, 0]
+  ]).astype(float)
+  obs_vals = np.array([
+    [2, 1, 0, 0, 0],
+    [2, 1, 0, 0, 0],
+    [2, 1, 0, 0, 0],
+    [2, 1, 0, 0, 0],
+    [2, 1, 0, 0, 0]
+  ]).astype(float)
+
+  prob = ctimbpy.TrackingProblem(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
+  prob.set_obs(obs_vals, obs_mask)
+  prob.set_prior(init_phi, init_omega)
+
+  result = prob.optimize()
+  print_result(result)
+
+
 if __name__ == '__main__':
-  test2()
+  test_should_move()

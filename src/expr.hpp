@@ -66,6 +66,11 @@ std::ostream& operator<<(std::ostream& o, const Var& v);
 std::ostream& operator<<(std::ostream& o, const AffExpr& e);
 std::ostream& operator<<(std::ostream& o, const QuadExpr& e);
 
+
+////// Equality checks (approximate) ///////
+inline bool close(double a, double b, double rtol=1e-05, double atol=1e-08) { return abs(a - b) <= (atol + rtol*abs(b)); }
+bool close(const AffExpr& a, const AffExpr& b, double rtol=1e-05, double atol=1e-08);
+
 ////// In-place operations ///////
 
 // multiplication

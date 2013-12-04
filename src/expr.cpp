@@ -1,6 +1,6 @@
 #include "expr.hpp"
 
-#define ZERO_THRESH 1e-15
+#define ZERO_THRESH 1e-13
 
 static inline double sq(double x) { return x*x; }
 
@@ -24,6 +24,37 @@ std::ostream& operator<<(std::ostream& o, const QuadExpr& e) {
     o << " + " << e.coeffs[i] << "*" << e.vars1[i] << "*" << e.vars2[i];
   }
   return o;
+}
+
+// Sorts an AffExpr's variables and coeffs by the variable name
+// (in-place)
+static void sort_vars_by_name(AffExpr& a) {
+  typedef std::pair<Var, double> P;
+  std::vector<P> var2coeff;
+  const int n = a.coeffs.size();
+  assert(a.coeffs.size() == a.vars.size());
+  for (int i = 0; i < n; ++i) {
+    var2coeff.push_back(std::make_pair(a.vars[i], a.coeffs[i]));
+  }
+  std::sort(var2coeff.begin(), var2coeff.end(), [](const P& x, const P& y) {
+    return x.first.rep->name < y.first.rep->name;
+  });
+  for (int i = 0; i < n; ++i) {
+    a.vars[i] = var2coeff[i].first;
+    a.coeffs[i] = var2coeff[i].second;
+  }
+}
+
+bool close(const AffExpr& a_, const AffExpr& b_, double rtol, double atol) {
+  AffExpr a = cleanupAff(a_), b = cleanupAff(b_);
+  sort_vars_by_name(a); sort_vars_by_name(b);
+  if (a.coeffs.size() != b.coeffs.size()) return false;
+  if (!close(a.constant, b.constant)) return false;
+  for (int i = 0; i < a.coeffs.size(); ++i) {
+    if (a.vars[i].rep->name != b.vars[i].rep->name) return false;
+    if (!close(a.coeffs[i], b.coeffs[i], rtol, atol)) return false;
+  }
+  return true;
 }
 
 QuadExpr exprSquare(const Var& a) {
