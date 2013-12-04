@@ -188,6 +188,7 @@ def generate_rot_flow(size, angle):
 # plt.show()
 
 def test_image():
+  import matplotlib
   import matplotlib.pyplot as plt
   from scipy import ndimage
   import observation
@@ -203,36 +204,38 @@ def test_image():
   INCR_ANGLE = 5
 
   def run(angle, init_phi, init_omega):
+    plt.clf()
+    matplotlib.rcParams.update({'font.size': 8})
     img = ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
 
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
     plt.subplot(251)
     plt.title('State')
-    plt.axis('equal')
-    plt.imshow(img).set_interpolation('nearest')
+    plt.axis('off')
+    plt.imshow(img, aspect=1).set_interpolation('nearest')
 
     tsdf, sdf = observation.state_to_tsdf(state, return_all=True)
     # print np.count_nonzero(abs(tsdf) < TSDF_TRUNC), tsdf.size
     plt.subplot(252)
-    plt.axis('equal')
+    plt.axis('off')
     plt.title('Observation TSDF')
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
     plt.subplot(253)
     plt.title('Observation weight')
-    plt.axis('equal')
+    plt.axis('off')
     obs_weights = compute_obs_weight(sdf, OBS_PEAK_WEIGHT)
     if angle == 0: obs_weights *= FIRST_OBS_EXTRA_WEIGHT
     plt.imshow(obs_weights, cmap='binary', vmin=0, vmax=OBS_PEAK_WEIGHT*10).set_interpolation('nearest')
 
     plt.subplot(254)
     plt.title('Prior TSDF')
-    plt.axis('equal')
+    plt.axis('off')
     plt.imshow(init_phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
     plt.subplot(255)
     plt.title('Prior weight')
-    plt.axis('equal')
+    plt.axis('off')
     plt.imshow(init_omega, vmin=0, vmax=OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
 
     SIZE = tsdf.shape[0]
@@ -251,28 +254,38 @@ def test_image():
 
     plt.subplot(256)
     plt.title('TSDF')
-    plt.axis('equal')
+    plt.axis('off')
     plt.imshow(result.phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
-    plt.subplot(257)
+    plt.subplot(257, aspect='equal')
     plt.title('Flow')
     def plot_u(u):
       x = np.linspace(WORLD_MIN[0], WORLD_MAX[0], u.shape[0])
       y = np.linspace(WORLD_MIN[1], WORLD_MAX[1], u.shape[1])
       Y, X = np.meshgrid(x, y)
-      plt.axis('equal')
       plt.quiver(X, Y, u[:,:,0], u[:,:,1], angles='xy', scale_units='xy', scale=1.)
     plot_u(result.u)
 
     plt.subplot(258)
     plt.title('New TSDF')
-    plt.axis('equal')
+    plt.axis('off')
     plt.imshow(result.next_phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
     next_omega = result.next_omega + obs_weights
+    plt.subplot(259)
+    plt.title('New weight')
+    plt.axis('off')
+    plt.imshow(next_omega, vmin=0, vmax=OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
+
+    plt.subplot(2,5,10)
+    plt.title('Output')
+    plt.axis('off')
+    plt.contour(np.where(next_omega > .5, result.next_phi, np.nan), levels=[0])
+    # plt.imshow(next_omega > .5, vmin=0, vmax=1, cmap='binary').set_interpolation('nearest')
+    plt.imshow(np.zeros_like(tsdf), vmin=0, vmax=1, cmap='binary').set_interpolation('nearest')
 
     # plt.show()
-    plt.savefig('out/plots_%d.pdf' % angle)
+    plt.savefig('out/plots_%d.png' % angle, bbox_inches='tight')
 
     return result.next_phi, next_omega
 
@@ -281,7 +294,7 @@ def test_image():
   orig_omega = np.zeros((SIZE, SIZE))
   
   curr_phi, curr_omega = orig_phi, orig_omega
-  for i in range(30):
+  for i in range(75):
     angle = START_ANGLE + i*INCR_ANGLE
     curr_phi, curr_omega = run(angle, curr_phi, curr_omega)
 
