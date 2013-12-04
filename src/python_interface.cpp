@@ -1,5 +1,6 @@
 #include <boost/python.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
+#include <boost/python/slice.hpp>
 #include <sstream>
 #include "tracking_problem.hpp"
 #include "logging.hpp"
@@ -36,11 +37,12 @@ class PyTrackingProblem : public TrackingProblem {
 public:
   PyTrackingProblem(double xmin_, double xmax_, double ymin_, double ymax_, int nx_, int ny_) : TrackingProblem(xmin_, xmax_, ymin_, ymax_, nx_, ny_) { }
 
-  void py_set_obs(py::object py_vals, py::object py_mask) {
-    DoubleField vals(m_ctx->grid_params), mask(m_ctx->grid_params);
+  void py_set_obs(py::object py_vals, py::object py_weights, py::object py_mask) {
+    DoubleField vals(m_ctx->grid_params), weights(m_ctx->grid_params), mask(m_ctx->grid_params);
     to_scalar_field(py_vals, vals);
+    to_scalar_field(py_weights, weights);
     to_scalar_field(py_mask, mask);
-    set_obs(vals, mask);
+    set_obs(vals, weights, mask);
   }
 
   void py_set_prior(py::object py_mean, py::object py_omega) {
@@ -48,6 +50,13 @@ public:
     to_scalar_field(py_mean, mean);
     to_scalar_field(py_omega, omega);
     set_prior(mean, omega);
+  }
+
+  void py_set_init_u(py::object py_u) {
+    DoubleField u_x(m_ctx->grid_params), u_y(m_ctx->grid_params);
+    to_scalar_field(py_u[py::make_tuple(py::slice(),py::slice(),0)], u_x);
+    to_scalar_field(py_u[py::make_tuple(py::slice(),py::slice(),1)], u_y);
+    set_init_u(u_x, u_y);
   }
 
   PyTrackingProblemResultPtr py_optimize() {
@@ -89,6 +98,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<PyTrackingProblem, PyTrackingProblemPtr>("TrackingProblem", py::init<double, double, double, double, int, int>())
     .def("set_obs", &PyTrackingProblem::py_set_obs)
     .def("set_prior", &PyTrackingProblem::py_set_prior)
+    .def("set_init_u", &PyTrackingProblem::py_set_init_u)
     .def_readwrite("coeffs", &PyTrackingProblem::m_coeffs)
     .def("optimize", &PyTrackingProblem::py_optimize)
     ;

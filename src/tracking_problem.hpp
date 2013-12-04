@@ -252,7 +252,7 @@ struct ObservationCost : public CostFunc {
   const VarField& m_phi, m_u_x, m_u_y;
 
   // cost parameters
-  DoubleField m_vals, m_mask;
+  DoubleField m_vals, m_weights, m_mask;
 
   // temporary memory for eval() and quadratic()
   DoubleField m_tmp_phi_vals, m_tmp_u_x_vals, m_tmp_u_y_vals;
@@ -260,14 +260,15 @@ struct ObservationCost : public CostFunc {
 
   ObservationCost(const VarField& phi, const VarField& u_x, const VarField& u_y)
     : m_phi(phi), m_u_x(u_x), m_u_y(u_y),
-      m_vals(phi.grid_params()), m_mask(phi.grid_params()),
+      m_vals(phi.grid_params()), m_weights(phi.grid_params()), m_mask(phi.grid_params()),
       m_tmp_phi_vals(phi.grid_params()),
       m_tmp_u_x_vals(phi.grid_params()), m_tmp_u_y_vals(phi.grid_params()),
       m_tmp_curr_phi(phi.grid_params()),
       CostFunc("obs") { }
 
-  void set_from_vals_and_mask(const DoubleField& vals, const DoubleField& mask) {
+  void set_from_vals_and_mask(const DoubleField& vals, const DoubleField& weights, const DoubleField& mask) {
     m_vals = vals;
+    m_weights = weights;
     m_mask = mask;
   }
 
@@ -284,9 +285,10 @@ struct ObservationCost : public CostFunc {
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
         if (m_mask(i,j) == 0) continue;
+        assert(m_weights(i,j) >= 0);
         auto xy = gp.to_xy(i, j);
         double flowed_prev_phi_val = m_tmp_phi_vals.eval_xy(xy.first - m_tmp_u_x_vals(i,j), xy.second - m_tmp_u_y_vals(i,j));
-        cost += square(flowed_prev_phi_val - m_vals(i,j));
+        cost += m_weights(i,j) * square(flowed_prev_phi_val - m_vals(i,j));
       }
     }
     return cost;
@@ -312,6 +314,7 @@ struct ObservationCost : public CostFunc {
     for (int i = 0; i < gp.nx; ++i) {
       for (int j = 0; j < gp.ny; ++j) {
         if (m_mask(i,j) == 0) continue;
+        if (m_weights(i,j) < 1e-10) continue;
         auto xy = gp.to_xy(i, j);
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
         auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
@@ -321,7 +324,7 @@ struct ObservationCost : public CostFunc {
         // std::cout << "numerical:  " << numdiff_curr_phi(i,j) << '\n' << std::endl;
         assert(close(val, numdiff_curr_phi(i,j)));
 #endif
-        exprInc(expr, exprSquare(val - m_vals(i,j)));
+        exprInc(expr, m_weights(i,j) * exprSquare(val - m_vals(i,j)));
       }
     }
 
@@ -431,9 +434,9 @@ public:
 
   TrackingProblemCoeffsPtr m_coeffs; // cost coefficients
 
-  void set_obs(const DoubleField& vals, const DoubleField& mask) {
-    assert(vals.grid_params() == m_ctx->grid_params && mask.grid_params() == m_ctx->grid_params);
-    ((ObservationCost&) *m_observation_cost).set_from_vals_and_mask(vals, mask);
+  void set_obs(const DoubleField& vals, const DoubleField& weights, const DoubleField& mask) {
+    assert(vals.grid_params() == m_ctx->grid_params && weights.grid_params() == m_ctx->grid_params && mask.grid_params() == m_ctx->grid_params);
+    ((ObservationCost&) *m_observation_cost).set_from_vals_and_mask(vals, weights, mask);
   }
 
   void set_prior(const DoubleField& phi_mean, const DoubleField& omega) {
@@ -441,6 +444,12 @@ public:
     m_phi_mean.reset(new DoubleField(phi_mean));
     m_omega.reset(new DoubleField(omega));
     ((PriorCost&) *m_prior_cost).set_prior(phi_mean, omega);
+  }
+
+  void set_init_u(const DoubleField& u_x, const DoubleField& u_y) {
+    assert(u_x.grid_params() == m_ctx->grid_params && u_y.grid_params() == m_ctx->grid_params);
+    m_init_u_x.reset(new DoubleField(u_x));
+    m_init_u_y.reset(new DoubleField(u_y));
   }
 
   TrackingProblemResultPtr optimize() {
@@ -454,7 +463,19 @@ public:
         init_x(k++) = (*m_phi_mean)(i,j);
       }
     }
-    // initialize with zero flow field
+    // initialize with zero flow field if not provided
+    if (m_init_u_x && m_init_u_y) {
+      for (int i = 0; i < m_ctx->grid_params.nx; ++i) {
+        for (int j = 0; j < m_ctx->grid_params.ny; ++j) {
+          init_x(k++) = (*m_init_u_x)(i,j);
+        }
+      }
+      for (int i = 0; i < m_ctx->grid_params.nx; ++i) {
+        for (int j = 0; j < m_ctx->grid_params.ny; ++j) {
+          init_x(k++) = (*m_init_u_y)(i,j);
+        }
+      }
+    }
 
     OptResultPtr result = m_opt->optimize(init_x);
 
@@ -495,6 +516,7 @@ protected:
 
   // cost parameters and initial guess for optimization
   DoubleFieldPtr m_phi_mean, m_omega;
+  DoubleFieldPtr m_init_u_x, m_init_u_y;
 
   void init(TrackingProblemContextPtr ctx) {
     // default cost coefficients
