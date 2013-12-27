@@ -19,7 +19,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # external libraries
 find_package(Boost COMPONENTS system python filesystem program_options REQUIRED)
+find_package(Cholmod)
+find_package(BLAS)
+find_package(LAPACK)
 # libraries packaged with this source tree
 set(EIGEN_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/eigen-3.2.0)
 
+#set(CERES_DIR ${CMAKE_SOURCE_DIR}/ext/ceres-solver-1.8.0)
+#set(CERES_INCLUDE_DIRS ${CERES_DIR}/include)
+
+#find_package(Ceres 1.8 REQUIRED)
+
 add_subdirectory(src)
+#add_subdirectory(ext)

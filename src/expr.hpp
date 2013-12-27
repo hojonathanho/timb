@@ -4,6 +4,8 @@
 #include <Eigen/Sparse>
 #include <ostream>
 
+///////// Symbolic quadratic expressions /////////
+
 struct VarRep {
   VarRep(int _index, const std::string& _name, void* _creator) : index(_index), name(_name), removed(false), creator(_creator) {}
   int index;
@@ -18,6 +20,20 @@ struct Var {
   explicit Var(VarRep* rep) : rep(rep) {}
   Var(const Var& other) : rep(other.rep) {}
   double value(const Eigen::VectorXd& x) const {return x(rep->index);}
+};
+
+class VarFactory {
+public:
+  VarFactory() : m_curr_index(0) { }
+  ~VarFactory();
+  Var make_var(const string& name);
+  int num_vars() const { return m_reps.size(); }
+  const vector<Var>& vars() const { return m_vars; }
+
+private:
+  int m_curr_index;
+  vector<VarRep*> m_reps;
+  vector<Var> m_vars; // redundant but convenient
 };
 
 struct AffExpr { // affine expression

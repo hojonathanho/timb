@@ -4,6 +4,19 @@
 
 static inline double sq(double x) { return x*x; }
 
+VarFactory::~VarFactory() {
+  for (int i = 0; i < m_reps.size(); ++i) {
+    delete m_reps[i];
+  }
+}
+
+Var VarFactory::make_var(const string& name) {
+  VarRep* rep = new VarRep(m_curr_index++, name, this);
+  m_reps.push_back(rep);
+  m_vars.push_back(Var(rep));
+  return m_vars.back();
+}
+
 std::ostream& operator<<(std::ostream& o, const Var& v) {
   if (v.rep != NULL)
     o << v.rep->name;

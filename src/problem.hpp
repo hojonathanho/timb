@@ -80,41 +80,42 @@ class CostFunc {
 public:
   CostFunc(const string& name) : m_name(name) { }
 
-  const string& name() const { return m_name; }
+  string name() const = 0;
+  int num_residuals() const = 0;
+  bool is_linear() const = 0;
 
-  virtual double eval(const VectorXd&) = 0;
-  virtual QuadFunctionPtr quadratic(const VectorXd&) = 0;
-
-protected:
-  string m_name;
+  // virtual double eval(const VectorXd&) = 0;
+  // virtual QuadFunctionPtr quadratic(const VectorXd&) = 0;
+  virtual void eval(const VectorXd&, VectorXd&) = 0;
+  virtual void linearize(const VectorXd&, QuadFunction& out) = 0;
 };
 typedef boost::shared_ptr<CostFunc> CostFuncPtr;
 
 
-class QuadraticCostFunc : public CostFunc {
-public:
-  QuadraticCostFunc(const string& name) : m_quad(), CostFunc(name) { }
-  QuadraticCostFunc(const string& name, const QuadExpr& expr) : m_quad(new QuadFunction(expr)), CostFunc(name) { }
+// class QuadraticCostFunc : public CostFunc {
+// public:
+//   QuadraticCostFunc(const string& name) : m_quad(), CostFunc(name) { }
+//   QuadraticCostFunc(const string& name, const QuadExpr& expr) : m_quad(new QuadFunction(expr)), CostFunc(name) { }
 
-  virtual double eval(const VectorXd& x) { return m_quad->value(x); }
-  virtual QuadFunctionPtr quadratic(const VectorXd&) { return m_quad; }
+//   virtual double eval(const VectorXd& x) { return m_quad->value(x); }
+//   virtual QuadFunctionPtr quadratic(const VectorXd&) { return m_quad; }
 
-protected:
-  QuadFunctionPtr m_quad;
-  void init_from_expr(const QuadExpr& expr) {
-    m_quad.reset(new QuadFunction(expr));
-  }
-};
-typedef boost::shared_ptr<QuadraticCostFunc> QuadraticCostFuncPtr;
+// protected:
+//   QuadFunctionPtr m_quad;
+//   void init_from_expr(const QuadExpr& expr) {
+//     m_quad.reset(new QuadFunction(expr));
+//   }
+// };
+// typedef boost::shared_ptr<QuadraticCostFunc> QuadraticCostFuncPtr;
 
 
 struct OptParams {
   double init_trust_region_size;
-  double trust_shrink_ratio;
-  double trust_expand_ratio;
+  // double trust_shrink_ratio;
+  // double trust_expand_ratio;
   double min_trust_region_size;
   double min_approx_improve;
-  double improve_ratio_threshold;
+  // double improve_ratio_threshold;
   int max_iter;
 
   OptParams();
