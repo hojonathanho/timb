@@ -221,7 +221,11 @@ struct ObservationCost : public CostFunc {
         auto xy = gp.to_xy(i, j);
         double flowed_x = xy.first - m_tmp_u_x_vals(i,j), flowed_y = xy.second - m_tmp_u_y_vals(i,j);
         auto prev_phi_grad = m_tmp_phi_vals.grad_xy(flowed_x, flowed_y);
-        AffExpr val = cleanupAff(m_tmp_curr_phi(i,j) - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j)) - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j)));
+        AffExpr val = cleanupAff(
+          m_tmp_curr_phi(i,j)
+          - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j))
+          - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j))
+        );
 #if TEST_LINEARIZATION
         // std::cout << "analytical: " << val << std::endl;
         // std::cout << "numerical:  " << numdiff_curr_phi(i,j) << '\n' << std::endl;
@@ -236,6 +240,8 @@ struct ObservationCost : public CostFunc {
 
 
 private:
+
+#if TEST_LINEARIZATION
   // numerically linearize flowed SDF
   void linearize_curr_phi(const VectorXd& x, AffExprField& out) {
     assert(g_all_vars.size() == x.size() && out.grid_params() == m_phi.grid_params());
@@ -282,6 +288,8 @@ private:
     apply_flow(tmp_phi_vals, tmp_u_x_vals, tmp_u_y_vals, out);
     return out;
   }
+
+#endif // TEST_LINEARIZATION
 };
 
 struct PriorCost : public QuadraticCostFunc {

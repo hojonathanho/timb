@@ -15,7 +15,7 @@ link_directories(
 
 add_library(timb
   expr.cpp
-  problem.cpp
+  optimizer.cpp
   logging.cpp
 )
 

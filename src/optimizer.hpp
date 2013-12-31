@@ -4,6 +4,7 @@
 #include "expr.hpp"
 #include <boost/function.hpp>
 
+#if 0
 class QuadFunction {
 public:
   typedef Eigen::SparseMatrix<double> SparseMatrixT;
@@ -75,38 +76,42 @@ private:
   }
 };
 typedef boost::shared_ptr<QuadFunction> QuadFunctionPtr;
+#endif
+
+class JacobianContainer {
+public:
+  typedef Eigen::Triplet<double> TripletT;
+
+  JacobianContainer(vector<TripletT>& triplets, int row_offset, double weight) : m_triplets(triplets), m_row_offset(row_offset), m_weight(weight) { }
+
+  void set_by_expr(int i, const AffExpr &e) {
+    // assert(0 <= i && i < m_num_residuals);
+    for (int j = 0; j < e.size(); ++j) {
+      m_triplets.push_back(TripletT(m_row_offset + i, e.vars[j].rep->index, m_weight*e.coeffs[j]));
+    }
+  }
+  // vector<TripletT>& triplets() { return m_triplets; }
+
+private:
+  // const int m_num_residuals;
+  const int m_row_offset;
+  const double m_weight;
+  vector<TripletT>& m_triplets;
+};
 
 class CostFunc {
 public:
-  CostFunc(const string& name) : m_name(name) { }
+  CostFunc() { }
+  virtual ~CostFunc() { }
 
-  string name() const = 0;
-  int num_residuals() const = 0;
-  bool is_linear() const = 0;
+  virtual string name() const = 0;
+  virtual int num_residuals() const = 0;
+  virtual bool is_linear() const = 0;
 
-  // virtual double eval(const VectorXd&) = 0;
-  // virtual QuadFunctionPtr quadratic(const VectorXd&) = 0;
-  virtual void eval(const VectorXd&, VectorXd&) = 0;
-  virtual void linearize(const VectorXd&, QuadFunction& out) = 0;
+  virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd>) = 0;
+  virtual void linearize(const VectorXd&, JacobianContainer&) = 0;
 };
 typedef boost::shared_ptr<CostFunc> CostFuncPtr;
-
-
-// class QuadraticCostFunc : public CostFunc {
-// public:
-//   QuadraticCostFunc(const string& name) : m_quad(), CostFunc(name) { }
-//   QuadraticCostFunc(const string& name, const QuadExpr& expr) : m_quad(new QuadFunction(expr)), CostFunc(name) { }
-
-//   virtual double eval(const VectorXd& x) { return m_quad->value(x); }
-//   virtual QuadFunctionPtr quadratic(const VectorXd&) { return m_quad; }
-
-// protected:
-//   QuadFunctionPtr m_quad;
-//   void init_from_expr(const QuadExpr& expr) {
-//     m_quad.reset(new QuadFunction(expr));
-//   }
-// };
-// typedef boost::shared_ptr<QuadraticCostFunc> QuadraticCostFuncPtr;
 
 
 struct OptParams {
