@@ -4,7 +4,7 @@
 #include <boost/format.hpp>
 using namespace std;
 
-#define XDIM 50000
+#define XDIM 1000000
 
 // static inline double sq(double x) { return x*x; }
 
@@ -59,7 +59,7 @@ struct Cost : public CostFunc {
 
 int main() {
   Optimizer opt;
-  opt.params().min_approx_improve = 1e-10;
+  // opt.params().min_approx_improve = 1e-10;
 
   vector<string> var_names;
   for (int i = 0; i < XDIM; ++i) {
@@ -72,9 +72,8 @@ int main() {
   VectorXd init_x(XDIM);
   init_x.setZero();
   OptResultPtr result = opt.optimize(init_x);
-  cout << "x: " << result->x.transpose() << endl;
+  cout << "x: " << result->x.maxCoeff() << ' ' << result->x.minCoeff() << endl;
   cout << "cost: " << result->cost << endl;
 
   return 0;
 }
-

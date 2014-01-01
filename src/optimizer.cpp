@@ -6,15 +6,16 @@ using std::printf;
 using std::map;
 
 #include <Eigen/CholmodSupport>
-#include <unsupported/Eigen/LevenbergMarquardt>
 
 OptParams::OptParams() :
   init_trust_region_size(1e4),
   // trust_shrink_ratio(.1),
   // trust_expand_ratio(2.),
   min_trust_region_size(1e-4),
-  min_approx_improve(1e-6),
+  // min_approx_improve(1e-6),
   // improve_ratio_threshold(.25),
+  grad_convergence_tol(1e-8),
+  approx_improve_rel_tol(1e-8),
   max_iter(100)
 { }
 
@@ -383,7 +384,7 @@ struct OptimizerImpl {
     for (int i = 0; i < m_costs.size(); ++i) {
       VectorXd residuals(m_costs[i]->num_residuals());
       m_costs[i]->eval(x, residuals);
-      out[i] = m_cost_coeffs[i] * residuals.sum();
+      out[i] = m_cost_coeffs[i] * residuals.squaredNorm();
       LOG_DEBUG("\t%s: %f", m_costs[i]->name().c_str(), out[i]);
     }
     LOG_DEBUG("Done");
@@ -435,65 +436,147 @@ struct OptimizerImpl {
   //   LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
   // }
 
-  class ObjectiveFunctor : public Eigen::SparseFunctor<double, int> {
-  public:
-    typedef Eigen::SparseFunctor<double, int> Base;
+  void eval_residuals(const VectorXd& x, VectorXd& fvec) {
+    int pos = 0;
+    for (int i = 0; i < m_costs.size(); ++i) {
+      CostFuncPtr cost = m_costs[i];
+      double coeff = m_cost_coeffs[i];
 
-    ObjectiveFunctor(OptimizerImpl& opt) : Base(opt.num_vars(), opt.num_residuals()), m_opt(opt) { }
+      auto seg = fvec.segment(pos, cost->num_residuals());
+      cost->eval(x, seg);
+      seg *= coeff;
 
-    int operator()(const VectorXd& x, VectorXd& fvec) {
-      int pos = 0;
-      for (int i = 0; i < m_opt.m_costs.size(); ++i) {
-        CostFuncPtr cost = m_opt.m_costs[i];
-        double coeff = m_opt.m_cost_coeffs[i];
-
-        auto seg = fvec.segment(pos, cost->num_residuals());
-        cost->eval(x, seg);
-        seg *= coeff;
-
-        pos += cost->num_residuals();
-      }
-      assert(pos == m_opt.num_residuals());
-      return 0;
+      pos += cost->num_residuals();
     }
+    assert(pos == num_residuals());
+  }
 
-    int df(const VectorXd& x, Base::JacobianType& fjac) {
-      assert(fjac.rows() == m_opt.num_residuals() && fjac.cols() == m_opt.num_vars());
+  void eval_jacobian(const VectorXd& x, SparseMatrixT& fjac) {
+    fjac.resize(num_residuals(), num_vars());
+    fjac.setZero();
 
-      vector<Eigen::Triplet<double> > triplets;
-      int pos = 0;
-      for (int i = 0; i < m_opt.m_costs.size(); ++i) {
-        CostFuncPtr cost = m_opt.m_costs[i];
-        double coeff = m_opt.m_cost_coeffs[i];
+    vector<Eigen::Triplet<double> > triplets;
+    int pos = 0;
+    for (int i = 0; i < m_costs.size(); ++i) {
+      CostFuncPtr cost = m_costs[i];
+      double coeff = m_cost_coeffs[i];
 
-        JacobianContainer jc(triplets, pos, coeff);
-        cost->linearize(x, jc);
-        pos += cost->num_residuals();
-      }
-      assert(pos == m_opt.num_residuals());
-
-      fjac.setFromTriplets(triplets.begin(), triplets.end());
-      fjac.makeCompressed();
-
-      return 0;
+      JacobianContainer jc(triplets, pos, coeff);
+      cost->linearize(x, jc);
+      pos += cost->num_residuals();
     }
+    assert(pos == num_residuals());
 
-  private:
-    OptimizerImpl& m_opt;
-  };
+    fjac.setFromTriplets(triplets.begin(), triplets.end());
+    fjac.makeCompressed();
+  }
 
   OptResultPtr optimize(const VectorXd& start_x) {
-    ObjectiveFunctor obj(*this);
-    Eigen::LevenbergMarquardt<ObjectiveFunctor> lm(obj);
+    assert(start_x.size() == num_vars());
+
+    bool done = false;
+    int iter = 0;
+
+    double tao = 1e-5;
+    double damping;
+    double damping_increase_factor = 2.;
 
     OptResultPtr result(new OptResult);
     result->x = start_x;
+    result->status = OPT_INCOMPLETE;
 
-    lm.minimize(result->x);
+    VectorXd fvec(num_residuals());
+    SparseMatrixT fjac(num_residuals(), num_vars());
 
-    result->status = OPT_CONVERGED;
-    result->cost_vals = VectorXd::Zero(m_costs.size()); eval_true_costs(result->x, result->cost_vals);
-    result->cost = result->cost_vals.sum();
+    // Eigen::CholmodSupernodalLLT<SparseMatrixT> solver;
+    Eigen::SimplicialLDLT<SparseMatrixT> solver;
+    SparseMatrixT jtj(num_vars(), num_vars());
+    SparseMatrixT lin_lhs(num_vars(), num_vars());
+    SparseMatrixT eye(num_vars(), num_vars()); eye.setIdentity();
+    VectorXd lin_rhs(num_vars());
+    VectorXd delta_x(num_vars());
+    VectorXd new_x(num_vars());
+
+    VectorXd tmp_residuals(num_residuals());
+
+    bool need_to_evaluate = true;
+
+    while (!done && iter < m_params.max_iter) {
+      ++iter;
+
+      // Form and solve linear model
+      if (need_to_evaluate) {
+        eval_residuals(result->x, fvec);
+        eval_jacobian(result->x, fjac);
+        ++result->n_func_evals;
+
+        jtj = fjac.transpose()*fjac;
+        lin_rhs = -fjac.transpose()*fvec;
+
+        need_to_evaluate = false;
+
+        // result->cost_vals = new_cost_vals;
+        result->cost = fvec.squaredNorm();
+        result->cost_over_iters.push_back(result->cost);
+      }
+
+      if (iter == 1) {
+        damping = tao * jtj.diagonal().maxCoeff();
+        std::cout << damping << std::endl;
+      }
+
+      lin_lhs = jtj + damping*eye;
+      solver.compute(lin_lhs);
+      delta_x = solver.solve(lin_rhs);
+
+      // gradient convergence condition
+      if (lin_rhs.lpNorm<Eigen::Infinity>() <= m_params.grad_convergence_tol) {
+        result->status = OPT_CONVERGED;
+        break;
+      }
+      // delta_x (approx improvement) relative convergence condition
+      if (delta_x.norm() <= m_params.approx_improve_rel_tol*(result->x.norm() + m_params.approx_improve_rel_tol)) {
+        result->status = OPT_CONVERGED;
+        break;
+      }
+
+      new_x = result->x + delta_x;
+
+      // Calculate improvement ratio
+      //tmp_residuals.setZero(); eval_residuals(result->x, tmp_residuals); double true_old_cost = tmp_residuals.squaredNorm();
+      double true_old_cost = fvec.squaredNorm();
+      tmp_residuals.setZero(); eval_residuals(new_x, tmp_residuals); double true_new_cost = tmp_residuals.squaredNorm();
+      double true_improvement = true_old_cost - true_new_cost;
+      double model_improvement = delta_x.dot(damping*delta_x + lin_rhs);
+      double ratio = true_improvement / model_improvement;
+
+      // Adjust damping
+      if (ratio > 0) {
+        result->x = new_x;
+        need_to_evaluate = true;
+        damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
+        damping_increase_factor = 2.;
+      } else {
+        damping *= damping_increase_factor;
+        damping_increase_factor *= 2.;
+      }
+    }
+
+    if (iter == m_params.max_iter && !done) {
+      result->status = OPT_ITER_LIMIT;
+    }
+
+    // ObjectiveFunctor obj(*this);
+    // Eigen::LevenbergMarquardt<ObjectiveFunctor> lm(obj);
+
+    // OptResultPtr result(new OptResult);
+    // result->x = start_x;
+
+    // lm.minimize(result->x);
+
+    // result->status = OPT_CONVERGED;
+    // result->cost_vals = VectorXd::Zero(m_costs.size()); eval_true_costs(result->x, result->cost_vals);
+    // result->cost = result->cost_vals.sum();
     return result;
 
   }

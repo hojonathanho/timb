@@ -119,8 +119,10 @@ struct OptParams {
   // double trust_shrink_ratio;
   // double trust_expand_ratio;
   double min_trust_region_size;
-  double min_approx_improve;
+  // double min_approx_improve;
   // double improve_ratio_threshold;
+  double grad_convergence_tol;
+  double approx_improve_rel_tol;
   int max_iter;
 
   OptParams();
