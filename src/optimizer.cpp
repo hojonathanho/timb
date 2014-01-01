@@ -474,7 +474,7 @@ struct OptimizerImpl {
   OptResultPtr optimize(const VectorXd& start_x) {
     assert(start_x.size() == num_vars());
 
-    bool done = false;
+    bool converged = false;
     int iter = 0;
 
     double tao = 1e-5;
@@ -499,70 +499,100 @@ struct OptimizerImpl {
 
     VectorXd tmp_residuals(num_residuals());
 
-    bool need_to_evaluate = true;
+    bool x_changed;
 
-    while (!done && iter < m_params.max_iter) {
+    while (!converged && iter < m_params.max_iter) {
       ++iter;
 
-      // Form and solve linear model
-      if (need_to_evaluate) {
+      if (iter == 1) {
         eval_residuals(result->x, fvec);
         eval_jacobian(result->x, fjac);
+        result->cost = fvec.squaredNorm();
+        result->cost_over_iters.push_back(result->cost);
         ++result->n_func_evals;
+        x_changed = true;
+      }
 
+      const double starting_cost = result->cost;
+
+      // Form and solve linear model
+      if (x_changed) {
         jtj = fjac.transpose()*fjac;
         lin_rhs = -fjac.transpose()*fvec;
 
-        need_to_evaluate = false;
-
-        // result->cost_vals = new_cost_vals;
-        result->cost = fvec.squaredNorm();
-        result->cost_over_iters.push_back(result->cost);
+        x_changed = false;
       }
 
       if (iter == 1) {
         damping = tao * jtj.diagonal().maxCoeff();
-        std::cout << damping << std::endl;
       }
 
       lin_lhs = jtj + damping*eye;
       solver.compute(lin_lhs);
       delta_x = solver.solve(lin_rhs);
 
-      // gradient convergence condition
-      if (lin_rhs.lpNorm<Eigen::Infinity>() <= m_params.grad_convergence_tol) {
+      // Check gradient convergence condition
+      double grad_max = lin_rhs.lpNorm<Eigen::Infinity>();
+      double delta_x_norm;
+      if (grad_max <= m_params.grad_convergence_tol) {
         result->status = OPT_CONVERGED;
-        break;
-      }
-      // delta_x (approx improvement) relative convergence condition
-      if (delta_x.norm() <= m_params.approx_improve_rel_tol*(result->x.norm() + m_params.approx_improve_rel_tol)) {
-        result->status = OPT_CONVERGED;
-        break;
-      }
-
-      new_x = result->x + delta_x;
-
-      // Calculate improvement ratio
-      //tmp_residuals.setZero(); eval_residuals(result->x, tmp_residuals); double true_old_cost = tmp_residuals.squaredNorm();
-      double true_old_cost = fvec.squaredNorm();
-      tmp_residuals.setZero(); eval_residuals(new_x, tmp_residuals); double true_new_cost = tmp_residuals.squaredNorm();
-      double true_improvement = true_old_cost - true_new_cost;
-      double model_improvement = delta_x.dot(damping*delta_x + lin_rhs);
-      double ratio = true_improvement / model_improvement;
-
-      // Adjust damping
-      if (ratio > 0) {
-        result->x = new_x;
-        need_to_evaluate = true;
-        damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
-        damping_increase_factor = 2.;
+        LOG_INFO("converged because gradient was small (%.3e < %.3e)", grad_max, m_params.grad_convergence_tol);
+        converged = true;
       } else {
-        damping *= damping_increase_factor;
-        damping_increase_factor *= 2.;
+        // Check delta_x (approx improvement) relative convergence condition
+        delta_x_norm = delta_x.norm();
+        double delta_x_norm_thresh = m_params.approx_improve_rel_tol*(result->x.norm() + m_params.approx_improve_rel_tol);
+        if (delta_x_norm <= delta_x_norm_thresh) {
+          result->status = OPT_CONVERGED;
+          LOG_INFO("converged because improvement was small (%.3e < %.3e)", delta_x_norm, delta_x_norm_thresh);
+          converged = true;
+        }
+      }
+
+      double ratio;
+      string extra_str;
+      if (!converged) {
+        new_x = result->x + delta_x;
+
+        // Calculate improvement ratio
+        //tmp_residuals.setZero(); eval_residuals(result->x, tmp_residuals); double true_old_cost = tmp_residuals.squaredNorm();
+        double true_old_cost = fvec.squaredNorm();
+        tmp_residuals.setZero(); eval_residuals(new_x, tmp_residuals); double true_new_cost = tmp_residuals.squaredNorm();
+        double true_improvement = true_old_cost - true_new_cost;
+        double model_improvement = delta_x.dot(damping*delta_x + lin_rhs);
+        ratio = true_improvement / model_improvement;
+
+        // Adjust damping
+        bool expanded_trust_region = false;
+        if (ratio > 0) {
+          result->x = new_x;
+          eval_residuals(result->x, fvec);
+          eval_jacobian(result->x, fjac);
+          result->cost = fvec.squaredNorm();
+          result->cost_over_iters.push_back(result->cost);
+          ++result->n_func_evals;
+          x_changed = true;
+
+          damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
+          damping_increase_factor = 2.;
+          // LOG_INFO("expanded trust region. new coeff: %.3e", damping);
+          expanded_trust_region = true;
+
+        } else {
+          damping *= damping_increase_factor;
+          damping_increase_factor *= 2.;
+          // LOG_INFO("shrunk trust region. new coeff: %.3e", damping);
+          expanded_trust_region = false;
+        }
+
+        LOG_INFO(
+          "% 4d: f:% 8e d:% 3.2e g:% 3.2e h:% 3.2e rho:% 3.2e mu:% 3.2e (%c) li:% 3d it:% 3.2e tt:% 3.2e",
+          iter, result->cost, starting_cost - result->cost, grad_max, delta_x_norm, ratio, 1./(damping+1e-15), expanded_trust_region ? 'E' : 'S', 0, 0., 0.
+        );
       }
     }
 
-    if (iter == m_params.max_iter && !done) {
+    if (iter == m_params.max_iter && !converged) {
       result->status = OPT_ITER_LIMIT;
     }
 
