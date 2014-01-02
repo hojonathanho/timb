@@ -84,7 +84,7 @@ int main() {
   var_names.push_back("w");
   vector<Var> varvec;
   opt.add_vars(var_names, varvec);
-  PowellProbVars vars = { varvec[0], varvec[1], varvec[2], varvec[3], 1, 1, 1, 1 };
+  PowellProbVars vars = { varvec[0], varvec[1], varvec[2], varvec[3], 1, 10, 1, 1 };
 
   opt.add_cost(CostFuncPtr(new PowellCost1(vars)));
   opt.add_cost(CostFuncPtr(new PowellCost2(vars)));
@@ -92,7 +92,7 @@ int main() {
   opt.add_cost(CostFuncPtr(new PowellCost4(vars)));
 
   VectorXd init_x(4);
-  init_x << 3, -1, 0, 1;
+  init_x << 3./vars.sx, -1./vars.sy, 0./vars.sz, 1./vars.sw;
   OptResultPtr result = opt.optimize(init_x);
   cout << "x: " << result->x.transpose() << endl;
   cout << "cost: " << result->cost << endl;

@@ -17,7 +17,7 @@ OptParams::OptParams() :
   grad_convergence_tol(1e-8),
   approx_improve_rel_tol(1e-8),
   max_iter(100),
-  check_linearizations(true)
+  check_linearizations(false)
 { }
 
 static string status_to_str(OptStatus s) {
@@ -449,6 +449,7 @@ struct OptimizerImpl {
       cost->linearize(x, jc);
 
       if (m_params.check_linearizations) {
+        LOG_INFO("Evaluating numerical derivatives");
         vector<AffExpr> numdiff_exprs;
         numdiff_cost(cost, x, numdiff_exprs);
         assert(numdiff_exprs.size() == jc.exprs().size());
@@ -479,29 +480,28 @@ struct OptimizerImpl {
     result->x = start_x;
     result->status = OPT_INCOMPLETE;
 
+    // Data for the current linearization
     VectorXd fvec(num_residuals());
     SparseMatrixT fjac(num_residuals(), num_vars());
+    SparseMatrixT scaling(num_vars(), num_vars());
 
     // Eigen::CholmodSupernodalLLT<SparseMatrixT> solver;
     Eigen::SimplicialLDLT<SparseMatrixT> solver;
+    // Temporary per-iteration data
     SparseMatrixT jtj(num_vars(), num_vars());
     SparseMatrixT lin_lhs(num_vars(), num_vars());
-    SparseMatrixT eye(num_vars(), num_vars()); eye.setIdentity();
+    // SparseMatrixT eye(num_vars(), num_vars()); eye.setIdentity();
     VectorXd lin_rhs(num_vars());
     VectorXd delta_x(num_vars());
+    VectorXd tmp_residuals(num_residuals());
     VectorXd new_x(num_vars());
 
-    VectorXd tmp_residuals(num_residuals());
-
-    bool x_changed;
+    bool x_changed; // whether recomputing linear model is needed, after evaluation
 
     while (!converged && iter < m_params.max_iter) {
       ++iter;
 
-      for (auto fn : m_callbacks) {
-        fn(result->x);
-      }
-
+      // Initialization (only on the first iteration)
       if (iter == 1) {
         eval_residuals(result->x, fvec);
         eval_jacobian(result->x, fjac);
@@ -509,9 +509,19 @@ struct OptimizerImpl {
         result->cost_over_iters.push_back(result->cost);
         ++result->n_func_evals;
         x_changed = true;
+
+        for (int i = 0; i < num_vars(); ++i) {
+          scaling.coeffRef(i,i) = fjac.col(i).norm();
+        }
+        scaling.makeCompressed();
+        std::cout << "scaling: " << scaling.diagonal().transpose() << std::endl;
       }
 
       const double starting_cost = result->cost;
+
+      for (auto& fn : m_callbacks) {
+        fn(result->x);
+      }
 
       // Form and solve linear model
       if (x_changed) {
@@ -522,15 +532,17 @@ struct OptimizerImpl {
       }
 
       if (iter == 1) {
-        damping = tao * jtj.diagonal().maxCoeff();
+        // damping = tao * jtj.diagonal().maxCoeff();
+        damping = tao; // this is scale invariant when we use scaling
       }
 
-      lin_lhs = jtj + damping*eye;
+      lin_lhs = jtj + damping*scaling.transpose()*scaling;
       solver.compute(lin_lhs);
       delta_x = solver.solve(lin_rhs);
+      std::cout << "step " << delta_x.transpose() << std::endl;
 
       // Check gradient convergence condition
-      double grad_max = lin_rhs.lpNorm<Eigen::Infinity>();
+      double grad_max = (lin_rhs.cwiseQuotient(scaling.diagonal())).lpNorm<Eigen::Infinity>();
       double delta_x_norm;
       if (grad_max <= m_params.grad_convergence_tol) {
         result->status = OPT_CONVERGED;
@@ -538,7 +550,7 @@ struct OptimizerImpl {
         converged = true;
       } else {
         // Check delta_x (approx improvement) relative convergence condition
-        delta_x_norm = delta_x.norm();
+        delta_x_norm = (delta_x.cwiseQuotient(scaling.diagonal())).norm();
         double delta_x_norm_thresh = m_params.approx_improve_rel_tol*(result->x.norm() + m_params.approx_improve_rel_tol);
         if (delta_x_norm <= delta_x_norm_thresh) {
           result->status = OPT_CONVERGED;
@@ -555,7 +567,7 @@ struct OptimizerImpl {
         double true_old_cost = fvec.squaredNorm();
         tmp_residuals.setZero(); eval_residuals(new_x, tmp_residuals); double true_new_cost = tmp_residuals.squaredNorm();
         double true_improvement = true_old_cost - true_new_cost;
-        double model_improvement = delta_x.dot(damping*delta_x + lin_rhs);
+        double model_improvement = delta_x.dot(damping*scaling.transpose()*scaling*delta_x + lin_rhs);
         double ratio = true_improvement / model_improvement;
 
         // Adjust damping
@@ -568,6 +580,9 @@ struct OptimizerImpl {
           result->cost_over_iters.push_back(result->cost);
           ++result->n_func_evals;
           x_changed = true;
+          for (int i = 0; i < num_vars(); ++i) {
+            scaling.coeffRef(i,i) = fmax(scaling.coeffRef(i,i), fjac.col(i).norm());
+          }
 
           damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
           damping_increase_factor = 2.;
