@@ -82,21 +82,38 @@ class JacobianContainer {
 public:
   typedef Eigen::Triplet<double> TripletT;
 
-  JacobianContainer(vector<TripletT>& triplets, int row_offset, double weight) : m_triplets(triplets), m_row_offset(row_offset), m_weight(weight) { }
+  JacobianContainer(vector<TripletT>& triplets, int num_residuals, int row_offset, double weight, bool store_exprs) :
+      m_triplets(triplets), m_num_residuals(num_residuals), m_row_offset(row_offset), m_weight(weight), m_store_exprs(store_exprs) {
+    if (m_store_exprs) {
+      m_exprs.resize(m_num_residuals);
+    }
+  }
 
   void set_by_expr(int i, const AffExpr &e) {
     // assert(0 <= i && i < m_num_residuals);
     for (int j = 0; j < e.size(); ++j) {
       m_triplets.push_back(TripletT(m_row_offset + i, e.vars[j].rep->index, m_weight*e.coeffs[j]));
     }
+
+    if (m_store_exprs) {
+      m_exprs[i] = e;
+    }
   }
   // vector<TripletT>& triplets() { return m_triplets; }
 
+  vector<AffExpr>& exprs() {
+    assert(m_store_exprs);
+    return m_exprs;
+  }
+
 private:
-  // const int m_num_residuals;
+  const bool m_store_exprs;
+  const int m_num_residuals;
   const int m_row_offset;
   const double m_weight;
   vector<TripletT>& m_triplets;
+
+  vector<AffExpr> m_exprs; // only used for numerical checking of gradients
 };
 
 class CostFunc {
@@ -124,6 +141,7 @@ struct OptParams {
   double grad_convergence_tol;
   double approx_improve_rel_tol;
   int max_iter;
+  bool check_linearizations;
 
   OptParams();
 };

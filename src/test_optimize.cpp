@@ -7,6 +7,7 @@ static inline double sq(double x) { return x*x; }
 
 struct PowellProbVars {
   Var x, y, z, w;
+  double sx, sy, sz, sw;
 };
 
 struct PowellCost1 : public CostFunc {
@@ -16,10 +17,10 @@ struct PowellCost1 : public CostFunc {
   int num_residuals() const { return 1; }
   bool is_linear() const { return false; }
   virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
-    out[0] = x(0) + 10*x(1);
+    out[0] = m_vars.sx*x(0) + 10*m_vars.sy*x(1);
   }
   virtual void linearize(const VectorXd& x, JacobianContainer& out) {
-    out.set_by_expr(0, m_vars.x + 10*m_vars.y);
+    out.set_by_expr(0, m_vars.sx*m_vars.x + 10*m_vars.sy*m_vars.y);
   }
 };
 
@@ -30,10 +31,10 @@ struct PowellCost2 : public CostFunc {
   int num_residuals() const { return 1; }
   bool is_linear() const { return false; }
   virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
-    out[0] = sqrt(5.)*(x(2) - x(3));
+    out[0] = sqrt(5.)*(m_vars.sz*x(2) - m_vars.sw*x(3));
   }
   virtual void linearize(const VectorXd& x, JacobianContainer& out) {
-    out.set_by_expr(0, sqrt(5.)*(m_vars.z - m_vars.w));
+    out.set_by_expr(0, sqrt(5.)*(m_vars.sz*m_vars.z - m_vars.sw*m_vars.w));
   }
 };
 
@@ -44,10 +45,14 @@ struct PowellCost3 : public CostFunc {
   int num_residuals() const { return 1; }
   bool is_linear() const { return false; }
   virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
-    out[0] = sq(x(1) - 2*x(2));
+    out[0] = sq(m_vars.sy*x(1) - 2*m_vars.sz*x(2));
   }
   virtual void linearize(const VectorXd& x, JacobianContainer& out) {
-    out.set_by_expr(0, 2.*(x(1) - 2*x(2))*(m_vars.y - x(1)) - 4.*(x(1) - 2*x(2))*(m_vars.z - x(2)) + pow((x(1) - 2*x(2)),2));
+    out.set_by_expr(0,
+      2.*(m_vars.sy*x(1) - 2*m_vars.sz*x(2))*m_vars.sy*(m_vars.y - x(1)) - 4.*(m_vars.sy*x(1)
+      - 2*m_vars.sz*x(2))*m_vars.sz*(m_vars.z - x(2))
+      + sq(m_vars.sy*x(1) - 2*m_vars.sz*x(2))
+    );
   }
 };
 
@@ -58,10 +63,14 @@ struct PowellCost4 : public CostFunc {
   int num_residuals() const { return 1; }
   bool is_linear() const { return false; }
   virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
-    out[0] = sqrt(10.)*sq(x(0) - x(3));
+    out[0] = sqrt(10.)*sq(m_vars.sx*x(0) - m_vars.sw*x(3));
   }
   virtual void linearize(const VectorXd& x, JacobianContainer& out) {
-    out.set_by_expr(0, sqrt(10.)*2.*(x(0) - x(3))*(m_vars.x-x(0)) - sqrt(10.)*2.*(x(0) - x(3))*(m_vars.w-x(3)) + sqrt(10.)*pow(x(0) - x(3), 2.));
+    out.set_by_expr(0,
+      sqrt(10.)*2.*(m_vars.sx*x(0) - m_vars.sw*x(3))*m_vars.sx*(m_vars.x-x(0))
+      - sqrt(10.)*2.*(m_vars.sx*x(0) - m_vars.sw*x(3))*m_vars.sw*(m_vars.w-x(3))
+      + sqrt(10.)*sq(m_vars.sx*x(0) - m_vars.sw*x(3))
+    );
   }
 };
 
@@ -75,7 +84,7 @@ int main() {
   var_names.push_back("w");
   vector<Var> varvec;
   opt.add_vars(var_names, varvec);
-  PowellProbVars vars = { varvec[0], varvec[1], varvec[2], varvec[3] };
+  PowellProbVars vars = { varvec[0], varvec[1], varvec[2], varvec[3], 1, 1, 1, 1 };
 
   opt.add_cost(CostFuncPtr(new PowellCost1(vars)));
   opt.add_cost(CostFuncPtr(new PowellCost2(vars)));

@@ -16,7 +16,8 @@ OptParams::OptParams() :
   // improve_ratio_threshold(.25),
   grad_convergence_tol(1e-8),
   approx_improve_rel_tol(1e-8),
-  max_iter(100)
+  max_iter(100),
+  check_linearizations(true)
 { }
 
 static string status_to_str(OptStatus s) {
@@ -357,27 +358,6 @@ struct OptimizerImpl {
     m_callbacks.push_back(fn);
   }
 
-  // void convexify_costs(const VectorXd& x, vector<QuadFunctionPtr>& out) {
-  //   LOG_DEBUG("Convexifying costs:");
-  //   out.resize(m_costs.size());
-  //   for (int i = 0; i < m_costs.size(); ++i) {
-  //     LOG_DEBUG("\t%s", m_costs[i]->name().c_str());
-  //     out[i] = m_costs[i]->quadratic(x);
-  //     out[i]->init_with_num_vars(num_vars());
-  //   }
-  //   LOG_DEBUG("Done");
-  // }
-
-  // void eval_quad_costs(const vector<QuadFunctionPtr>& quad_costs, const VectorXd& x, VectorXd& out) {
-  //   LOG_DEBUG("Evaluating model costs:");
-  //   assert(out.size() == m_costs.size() && out.size() == quad_costs.size());
-  //   for (int i = 0; i < quad_costs.size(); ++i) {
-  //     out[i] = m_cost_coeffs[i] * quad_costs[i]->value(x);
-  //     LOG_DEBUG("\t%s: %f", m_costs[i]->name().c_str(), out[i]);
-  //   }
-  //   LOG_DEBUG("Done");
-  // }
-
   void eval_true_costs(const VectorXd& x, VectorXd& out) {
     LOG_DEBUG("Evaluating true costs:");
     assert(out.size() == m_costs.size());
@@ -389,33 +369,6 @@ struct OptimizerImpl {
     }
     LOG_DEBUG("Done");
   }
-
-  // void linearize_costs(const VectorXd& x, SparseMatrixT& A, VectorXd& b) {
-  //   A.resize(num_residuals(), num_vars());
-  //   A.setZero();
-  //   b.resize(num_residuals());
-  //   b.setZero();
-
-  //   typedef Eigen::Triplet<double> T;
-  //   vector<T> triplets; //triplets.reserve(expr.size());
-
-  //   int start_row = 0;
-  //   for (CostFuncPtr c : m_costs) {
-  //     vector<AffExpr> res_exprs(c->num_residuals());
-  //     c->linearize(x, res_exprs);
-  //     for (int i = 0; i < c->num_residuals(); ++i) {
-  //       const AffExpr& expr = res_exprs[i];
-  //       int row = start_row + i;
-  //       for (int j = 0; j < expr.size(); ++j) {
-  //         int col = expr.vars[j].rep->index;
-  //         triplets.push_back(T(row, col, expr.coeffs[i]));
-  //       }
-  //       b(row) = expr.constant;
-  //     }
-
-  //     start_row += c->num_residuals();
-  //   }
-  // }
 
   // void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& quad_cost_vals, const VectorXd& new_cost_vals,
   //                      double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
@@ -435,6 +388,37 @@ struct OptimizerImpl {
   //   }
   //   LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
   // }
+
+  void numdiff_cost(CostFuncPtr cost, const VectorXd& x0, vector<AffExpr>& out_exprs) {
+    VectorXd x = x0;
+    VectorXd y2(cost->num_residuals());
+    VectorXd y1(cost->num_residuals());
+    VectorXd dy(cost->num_residuals());
+    const double eps = 1e-6;
+
+    out_exprs.clear();
+    out_exprs.resize(cost->num_residuals());
+
+    VectorXd y0(cost->num_residuals());
+    cost->eval(x0, y0);
+    for (int i = 0; i < y0.size(); ++i) {
+      exprInc(out_exprs[i], y0[i]);
+    }
+
+    for (int i = 0; i < num_vars(); ++i) {
+      x(i) += eps;
+      cost->eval(x, y2);
+      x(i) = x0(i) - eps;
+      cost->eval(x, y1);
+      x(i) = x0(i);
+      dy = (y2 - y1) / (2.*eps);
+      for (int j = 0; j < dy.size(); ++j) {
+        if (fabs(dy(j)) > 1e-10) {
+          exprInc(out_exprs[j], dy(j)*(m_var_factory.vars()[i] - x0(i)));
+        }
+      }
+    }
+  }
 
   void eval_residuals(const VectorXd& x, VectorXd& fvec) {
     int pos = 0;
@@ -461,8 +445,18 @@ struct OptimizerImpl {
       CostFuncPtr cost = m_costs[i];
       double coeff = m_cost_coeffs[i];
 
-      JacobianContainer jc(triplets, pos, coeff);
+      JacobianContainer jc(triplets, cost->num_residuals(), pos, coeff, m_params.check_linearizations);
       cost->linearize(x, jc);
+
+      if (m_params.check_linearizations) {
+        vector<AffExpr> numdiff_exprs;
+        numdiff_cost(cost, x, numdiff_exprs);
+        assert(numdiff_exprs.size() == jc.exprs().size());
+        for (int z = 0; z < numdiff_exprs.size(); ++z) {
+          assert(close(numdiff_exprs[z], jc.exprs()[z]));
+        }
+      }
+
       pos += cost->num_residuals();
     }
     assert(pos == num_residuals());
@@ -503,6 +497,10 @@ struct OptimizerImpl {
 
     while (!converged && iter < m_params.max_iter) {
       ++iter;
+
+      for (auto fn : m_callbacks) {
+        fn(result->x);
+      }
 
       if (iter == 1) {
         eval_residuals(result->x, fvec);
@@ -549,8 +547,6 @@ struct OptimizerImpl {
         }
       }
 
-      double ratio;
-      string extra_str;
       if (!converged) {
         new_x = result->x + delta_x;
 
@@ -560,7 +556,7 @@ struct OptimizerImpl {
         tmp_residuals.setZero(); eval_residuals(new_x, tmp_residuals); double true_new_cost = tmp_residuals.squaredNorm();
         double true_improvement = true_old_cost - true_new_cost;
         double model_improvement = delta_x.dot(damping*delta_x + lin_rhs);
-        ratio = true_improvement / model_improvement;
+        double ratio = true_improvement / model_improvement;
 
         // Adjust damping
         bool expanded_trust_region = false;
@@ -575,13 +571,11 @@ struct OptimizerImpl {
 
           damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
           damping_increase_factor = 2.;
-          // LOG_INFO("expanded trust region. new coeff: %.3e", damping);
           expanded_trust_region = true;
 
         } else {
           damping *= damping_increase_factor;
           damping_increase_factor *= 2.;
-          // LOG_INFO("shrunk trust region. new coeff: %.3e", damping);
           expanded_trust_region = false;
         }
 
@@ -596,17 +590,6 @@ struct OptimizerImpl {
       result->status = OPT_ITER_LIMIT;
     }
 
-    // ObjectiveFunctor obj(*this);
-    // Eigen::LevenbergMarquardt<ObjectiveFunctor> lm(obj);
-
-    // OptResultPtr result(new OptResult);
-    // result->x = start_x;
-
-    // lm.minimize(result->x);
-
-    // result->status = OPT_CONVERGED;
-    // result->cost_vals = VectorXd::Zero(m_costs.size()); eval_true_costs(result->x, result->cost_vals);
-    // result->cost = result->cost_vals.sum();
     return result;
 
   }
