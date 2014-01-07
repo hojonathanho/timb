@@ -5,6 +5,8 @@
 using std::printf;
 using std::map;
 
+#include <boost/timer.hpp>
+
 #include <Eigen/CholmodSupport>
 
 OptParams::OptParams() :
@@ -421,6 +423,7 @@ struct OptimizerImpl {
   }
 
   void eval_residuals(const VectorXd& x, VectorXd& fvec) {
+    fvec.setZero();
     int pos = 0;
     for (int i = 0; i < m_costs.size(); ++i) {
       CostFuncPtr cost = m_costs[i];
@@ -469,11 +472,12 @@ struct OptimizerImpl {
   OptResultPtr optimize(const VectorXd& start_x) {
     assert(start_x.size() == num_vars());
 
+    boost::timer total_timer;
+
     bool converged = false;
     int iter = 0;
 
-    double tao = 1e-5;
-    double damping;
+    double damping = 1e-5;
     double damping_increase_factor = 2.;
 
     OptResultPtr result(new OptResult);
@@ -501,20 +505,20 @@ struct OptimizerImpl {
     while (!converged && iter < m_params.max_iter) {
       ++iter;
 
+      boost::timer iteration_timer;
+
       // Initialization (only on the first iteration)
       if (iter == 1) {
-        eval_residuals(result->x, fvec);
-        eval_jacobian(result->x, fjac);
+        eval_residuals(result->x, fvec); ++result->n_func_evals;
+        eval_jacobian(result->x, fjac); ++result->n_jacobian_evals;
         result->cost = fvec.squaredNorm();
         result->cost_over_iters.push_back(result->cost);
-        ++result->n_func_evals;
         x_changed = true;
 
         for (int i = 0; i < num_vars(); ++i) {
           scaling.coeffRef(i,i) = fjac.col(i).norm();
         }
         scaling.makeCompressed();
-        std::cout << "scaling: " << scaling.diagonal().transpose() << std::endl;
       }
 
       const double starting_cost = result->cost;
@@ -531,15 +535,9 @@ struct OptimizerImpl {
         x_changed = false;
       }
 
-      if (iter == 1) {
-        // damping = tao * jtj.diagonal().maxCoeff();
-        damping = tao; // this is scale invariant when we use scaling
-      }
-
       lin_lhs = jtj + damping*scaling.transpose()*scaling;
       solver.compute(lin_lhs);
       delta_x = solver.solve(lin_rhs);
-      std::cout << "step " << delta_x.transpose() << std::endl;
 
       // Check gradient convergence condition
       double grad_max = (lin_rhs.cwiseQuotient(scaling.diagonal())).lpNorm<Eigen::Infinity>();
@@ -563,9 +561,14 @@ struct OptimizerImpl {
         new_x = result->x + delta_x;
 
         // Calculate improvement ratio
-        //tmp_residuals.setZero(); eval_residuals(result->x, tmp_residuals); double true_old_cost = tmp_residuals.squaredNorm();
-        double true_old_cost = fvec.squaredNorm();
-        tmp_residuals.setZero(); eval_residuals(new_x, tmp_residuals); double true_new_cost = tmp_residuals.squaredNorm();
+        // eval_residuals(result->x, tmp_residuals); double true_old_cost = tmp_residuals.squaredNorm();
+        // double true_old_cost = fvec.squaredNorm();
+        double true_old_cost = result->cost;
+#ifndef NDEBUG
+        eval_residuals(result->x, tmp_residuals); ++result->n_func_evals;
+        assert(fabs(tmp_residuals.squaredNorm() - true_old_cost) < 1e-10);
+#endif
+        eval_residuals(new_x, tmp_residuals); ++result->n_func_evals; double true_new_cost = tmp_residuals.squaredNorm();
         double true_improvement = true_old_cost - true_new_cost;
         double model_improvement = delta_x.dot(damping*scaling.transpose()*scaling*delta_x + lin_rhs);
         double ratio = true_improvement / model_improvement;
@@ -574,11 +577,15 @@ struct OptimizerImpl {
         bool expanded_trust_region = false;
         if (ratio > 0) {
           result->x = new_x;
-          eval_residuals(result->x, fvec);
-          eval_jacobian(result->x, fjac);
+          fvec = tmp_residuals;
+#ifndef NDEBUG
+          LOG_DEBUG("test evaluation");
+          eval_residuals(result->x, tmp_residuals); ++result->n_func_evals;
+          assert((tmp_residuals - fvec).isMuchSmallerThan(1e-10));
+#endif
+          eval_jacobian(result->x, fjac); ++result->n_jacobian_evals;
           result->cost = fvec.squaredNorm();
           result->cost_over_iters.push_back(result->cost);
-          ++result->n_func_evals;
           x_changed = true;
           for (int i = 0; i < num_vars(); ++i) {
             scaling.coeffRef(i,i) = fmax(scaling.coeffRef(i,i), fjac.col(i).norm());
@@ -596,7 +603,17 @@ struct OptimizerImpl {
 
         LOG_INFO(
           "% 4d: f:% 8e d:% 3.2e g:% 3.2e h:% 3.2e rho:% 3.2e mu:% 3.2e (%c) li:% 3d it:% 3.2e tt:% 3.2e",
-          iter, result->cost, starting_cost - result->cost, grad_max, delta_x_norm, ratio, 1./(damping+1e-15), expanded_trust_region ? 'E' : 'S', 0, 0., 0.
+          iter,
+          result->cost,
+          starting_cost - result->cost,
+          grad_max,
+          delta_x_norm,
+          ratio,
+          1./(damping+1e-15),
+          expanded_trust_region ? 'E' : 'S',
+          0,
+          iteration_timer.elapsed(),
+          total_timer.elapsed()
         );
       }
     }
@@ -605,6 +622,7 @@ struct OptimizerImpl {
       result->status = OPT_ITER_LIMIT;
     }
 
+    result->n_iters = iter;
     return result;
 
   }

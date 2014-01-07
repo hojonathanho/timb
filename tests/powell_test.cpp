@@ -1,5 +1,7 @@
 #include "optimizer.hpp"
 
+#include "gtest/gtest.h"
+
 #include <iostream>
 using namespace std;
 
@@ -74,7 +76,7 @@ struct PowellCost4 : public CostFunc {
   }
 };
 
-int main() {
+static OptResultPtr optimize_powell(const VectorXd& scales) {
   Optimizer opt;
 
   vector<string> var_names;
@@ -84,7 +86,10 @@ int main() {
   var_names.push_back("w");
   vector<Var> varvec;
   opt.add_vars(var_names, varvec);
-  PowellProbVars vars = { varvec[0], varvec[1], varvec[2], varvec[3], 1, 10, 1, 1 };
+  PowellProbVars vars = {
+    varvec[0], varvec[1], varvec[2], varvec[3],
+    scales(0), scales(1), scales(2), scales(3)
+  };
 
   opt.add_cost(CostFuncPtr(new PowellCost1(vars)));
   opt.add_cost(CostFuncPtr(new PowellCost2(vars)));
@@ -93,9 +98,22 @@ int main() {
 
   VectorXd init_x(4);
   init_x << 3./vars.sx, -1./vars.sy, 0./vars.sz, 1./vars.sw;
-  OptResultPtr result = opt.optimize(init_x);
-  cout << "x: " << result->x.transpose() << endl;
-  cout << "cost: " << result->cost << endl;
+  return opt.optimize(init_x);
+}
 
-  return 0;
+TEST(PowellTest, ObjectiveValue) {
+  OptResultPtr result = optimize_powell(VectorXd::Ones(4));
+  VectorXd expected(4); expected << 0.00117178, -0.000117178, 0.000194455, 0.000194455;
+  cout << result->x.transpose() << endl;
+  cout << result->cost << endl;
+  EXPECT_TRUE(result->x.isApprox(expected, 1e-6));
+  EXPECT_TRUE(fabs(result->cost) < 1e-10);
+}
+
+TEST(PowellTest, ScaleInvariance) {
+  VectorXd scales(4); scales << .931, 483., 2., .073;
+  OptResultPtr result1 = optimize_powell(VectorXd::Ones(4));
+  OptResultPtr result2 = optimize_powell(scales);
+  EXPECT_TRUE(result1->x.isApprox(result2->x.cwiseProduct(scales), 1e-10));
+  EXPECT_EQ(result1->n_iters, result2->n_iters);
 }

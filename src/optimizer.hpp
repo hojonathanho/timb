@@ -158,9 +158,9 @@ struct OptResult {
   VectorXd cost_vals;
   vector<double> cost_over_iters;
 
-  int n_func_evals, n_qp_solves, n_iters;
+  int n_func_evals, n_jacobian_evals, n_qp_solves, n_iters;
 
-  OptResult() : status(OPT_INCOMPLETE), n_func_evals(0), n_qp_solves(0), n_iters(0) { }
+  OptResult() : status(OPT_INCOMPLETE), n_func_evals(0), n_jacobian_evals(0), n_qp_solves(0), n_iters(0) { }
 };
 typedef boost::shared_ptr<OptResult> OptResultPtr;
 

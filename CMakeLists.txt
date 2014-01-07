@@ -25,10 +25,6 @@ find_package(LAPACK)
 # libraries packaged with this source tree
 set(EIGEN_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/eigen-3.2.0)
 
-#set(CERES_DIR ${CMAKE_SOURCE_DIR}/ext/ceres-solver-1.8.0)
-#set(CERES_INCLUDE_DIRS ${CERES_DIR}/include)
-
-#find_package(Ceres 1.8 REQUIRED)
-
+add_subdirectory(ext) # contains gtest, must come before tests
+add_subdirectory(tests)
 add_subdirectory(src)
-#add_subdirectory(ext)
