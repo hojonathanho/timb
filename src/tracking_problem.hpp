@@ -8,77 +8,12 @@
 
 #define TEST_LINEARIZATION 0
 
-template<typename T>
-inline T clip(T x, T lo, T hi) {
-  return std::max(std::min(x, hi), lo);
-}
-
-template<typename T>
-inline T square(const T& x) { return x*x; }
-
-
-
-
-
-template<typename T, typename S>
-std::ostream& operator<<(std::ostream& o, const ScalarField<T, S>& f) {
-  for (int i = 0; i < f.grid_params().nx; ++i) {
-    for (int j = 0; j < f.grid_params().ny; ++j) {
-      o << f(i,j) << ' ';
-    }
-    o << '\n';
-  }
-  return o;
-}
-
 void extract_values(const VectorXd& x, const VarField& vars, DoubleField& out) {
   assert(out.grid_params() == vars.grid_params());
   for (int i = 0; i < vars.grid_params().nx; ++i) {
     for (int j = 0; j < vars.grid_params().ny; ++j) {
       out(i,j) = vars(i,j).value(x);
     }
-  }
-}
-
-typedef Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > RowMajorConstDblMapT;
-RowMajorConstDblMapT to_eigen(const DoubleField& f) {
-  return RowMajorConstDblMapT(f.data(), f.grid_params().nx, f.grid_params().ny);
-}
-
-template<typename Derived>
-void from_eigen(const Eigen::DenseBase<Derived> &in, DoubleField& out) {
-  assert(out.grid_params().nx == in.rows() && out.grid_params().ny == in.cols());
-  for (int i = 0; i < in.rows(); ++i) {
-    for (int j = 0; j < in.cols(); ++j) {
-      out(i,j) = in(i,j);
-    }
-  }
-}
-
-// one-sided finite differences
-template<typename T, typename S>
-void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S, S>& g_y) {
-  const GridParams& p = f.grid_params();
-  assert(p == g_x.grid_params() && p == g_y.grid_params());
-
-  // derivatives in x direction
-  for (int i = 0; i < p.nx - 1; ++i) {
-    for (int j = 0; j < p.ny; ++j) {
-      g_x(i,j) = (f(i+1,j) - f(i,j)) * (1./p.eps_x);
-    }
-  }
-  // copy over last row
-  for (int j = 0; j < p.ny; ++j) {
-    g_x(p.nx-1,j) = g_x(p.nx-2,j);
-  }
-
-  // derivatives in y direction
-  for (int i = 0; i < p.nx; ++i) {
-    for (int j = 0; j < p.ny - 1; ++j) {
-      g_y(i,j) = (f(i,j+1) - f(i,j)) * (1./p.eps_y);
-    }
-    // copy over last column
-    g_y(i,p.ny-1) = g_y(i,p.ny-2);
   }
 }
 
@@ -103,20 +38,6 @@ void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
     g_all_vars.push_back(vars[i]);
   }
 }
-
-template<typename ElemT, typename ExprT>
-void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, const DoubleField& u_y, ScalarField<ExprT, ExprT>& out) {
-  const GridParams& gp = phi.grid_params();
-  assert(u_x.grid_params() == gp && u_y.grid_params() == gp && out.grid_params() == gp);
-
-  for (int i = 0; i < gp.nx; ++i) {
-    for (int j = 0; j < gp.ny; ++j) {
-      auto xy = gp.to_xy(i, j);
-      out(i,j) = phi.eval_xy(xy.first - u_x(i,j), xy.second - u_y(i,j));
-    }
-  }
-}
-
 
 struct FlowRigidityCost : public QuadraticCostFunc {
   FlowRigidityCost(const VarField& u_x, const VarField& u_y) : QuadraticCostFunc("flow_rigidity") {

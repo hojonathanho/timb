@@ -28,3 +28,12 @@ typedef vector<string> StrVec;
 #define FAIL_IF_FALSE(expr) if (!(expr)) {\
   PRINT_AND_THROW( "expected true: " #expr);\
 }
+
+
+template<typename T>
+inline T clip(T x, T lo, T hi) {
+  return std::max(std::min(x, hi), lo);
+}
+
+template<typename T>
+inline T square(const T& x) { return x*x; }

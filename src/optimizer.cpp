@@ -452,13 +452,14 @@ struct OptimizerImpl {
       cost->linearize(x, jc);
 
       if (m_params.check_linearizations) {
-        LOG_INFO("Evaluating numerical derivatives");
+        LOG_DEBUG("Evaluating numerical derivatives for cost %s", cost->name());
         vector<AffExpr> numdiff_exprs;
         numdiff_cost(cost, x, numdiff_exprs);
-        assert(numdiff_exprs.size() == jc.exprs().size());
+        FAIL_IF_FALSE(numdiff_exprs.size() == jc.exprs().size());
         for (int z = 0; z < numdiff_exprs.size(); ++z) {
-          assert(close(numdiff_exprs[z], jc.exprs()[z]));
+          FAIL_IF_FALSE(close(numdiff_exprs[z], jc.exprs()[z]));
         }
+        LOG_DEBUG("Cost %s passed derivative check", cost->name());
       }
 
       pos += cost->num_residuals();
