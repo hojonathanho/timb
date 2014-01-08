@@ -11,6 +11,9 @@ include_directories(
 
 set(GTEST_LIBRARIES gtest gtest_main)
 
+add_executable(simple_test simple_test.cpp)
+target_link_libraries(simple_test timb ${GTEST_LIBRARIES})
+
 add_executable(powell_test powell_test.cpp)
 target_link_libraries(powell_test timb ${GTEST_LIBRARIES})
 

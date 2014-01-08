@@ -70,12 +70,14 @@ struct OptimizerImpl {
   }
   void add_cost(CostFuncPtr cost, double coeff) {
     assert(m_costs.size() == m_cost_coeffs.size());
+    FAIL_IF_FALSE(coeff >= 0);
     m_costs.push_back(cost);
     m_cost_coeffs.push_back(coeff);
     m_cost2idx[cost] = m_costs.size() - 1;
   }
   void set_cost_coeff(CostFuncPtr cost, double coeff) {
     assert(m_cost2idx.find(cost) != m_cost2idx.end());
+    FAIL_IF_FALSE(coeff >= 0);
     m_cost_coeffs[m_cost2idx[cost]] = coeff;
   }
 
