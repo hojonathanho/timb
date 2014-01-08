@@ -130,6 +130,14 @@ RowMajorConstDblMapT to_eigen(const DoubleField& f) {
   return RowMajorConstDblMapT(f.data(), f.grid_params().nx, f.grid_params().ny);
 }
 
+void extract_field_values(const VectorXd& x, const VarField& vars, DoubleField& out) {
+  assert(out.grid_params() == vars.grid_params());
+  for (int i = 0; i < vars.grid_params().nx; ++i) {
+    for (int j = 0; j < vars.grid_params().ny; ++j) {
+      out(i,j) = vars(i,j).value(x);
+    }
+  }
+}
 
 template<typename ElemT, typename ExprT>
 void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, const DoubleField& u_y, ScalarField<ExprT, ExprT>& out) {

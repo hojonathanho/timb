@@ -448,18 +448,18 @@ struct OptimizerImpl {
       CostFuncPtr cost = m_costs[i];
       double coeff = m_cost_coeffs[i];
 
-      JacobianContainer jc(triplets, cost->num_residuals(), pos, coeff, m_params.check_linearizations);
-      cost->linearize(x, jc);
+      CostFuncLinearization lin(triplets, cost->num_residuals(), pos, coeff, m_params.check_linearizations);
+      cost->linearize(x, lin);
 
       if (m_params.check_linearizations) {
-        LOG_DEBUG("Evaluating numerical derivatives for cost %s", cost->name());
+        LOG_DEBUG("Evaluating numerical derivatives for cost %s", cost->name().c_str());
         vector<AffExpr> numdiff_exprs;
         numdiff_cost(cost, x, numdiff_exprs);
-        FAIL_IF_FALSE(numdiff_exprs.size() == jc.exprs().size());
+        FAIL_IF_FALSE(numdiff_exprs.size() == lin.exprs().size());
         for (int z = 0; z < numdiff_exprs.size(); ++z) {
-          FAIL_IF_FALSE(close(numdiff_exprs[z], jc.exprs()[z]));
+          FAIL_IF_FALSE(close(numdiff_exprs[z], lin.exprs()[z]));
         }
-        LOG_DEBUG("Cost %s passed derivative check", cost->name());
+        LOG_DEBUG("Cost %s passed derivative check", cost->name().c_str());
       }
 
       pos += cost->num_residuals();

@@ -78,11 +78,11 @@ private:
 typedef boost::shared_ptr<QuadFunction> QuadFunctionPtr;
 #endif
 
-class JacobianContainer {
+class CostFuncLinearization {
 public:
   typedef Eigen::Triplet<double> TripletT;
 
-  JacobianContainer(vector<TripletT>& triplets, int num_residuals, int row_offset, double weight, bool store_exprs) :
+  CostFuncLinearization(vector<TripletT>& triplets, int num_residuals, int row_offset, double weight, bool store_exprs) :
       m_triplets(triplets), m_num_residuals(num_residuals), m_row_offset(row_offset), m_weight(weight), m_store_exprs(store_exprs) {
     if (m_store_exprs) {
       m_exprs.resize(m_num_residuals);
@@ -126,7 +126,7 @@ public:
   virtual bool is_linear() const = 0;
 
   virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd>) = 0;
-  virtual void linearize(const VectorXd&, JacobianContainer&) = 0;
+  virtual void linearize(const VectorXd&, CostFuncLinearization&) = 0;
 };
 typedef boost::shared_ptr<CostFunc> CostFuncPtr;
 

@@ -8,14 +8,6 @@
 
 #define TEST_LINEARIZATION 0
 
-void extract_values(const VectorXd& x, const VarField& vars, DoubleField& out) {
-  assert(out.grid_params() == vars.grid_params());
-  for (int i = 0; i < vars.grid_params().nx; ++i) {
-    for (int j = 0; j < vars.grid_params().ny; ++j) {
-      out(i,j) = vars(i,j).value(x);
-    }
-  }
-}
 
 vector<Var> g_all_vars; // TODO: remove
 void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {

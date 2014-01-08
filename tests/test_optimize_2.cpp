@@ -47,7 +47,7 @@ struct Cost : public CostFunc {
     }
   }
 
-  virtual void linearize(const VectorXd&, JacobianContainer& out) {
+  virtual void linearize(const VectorXd&, CostFuncLinearization& out) {
     // assert(out.size() == num_residuals());
     std::cout << "linearize" << std::endl;
 
