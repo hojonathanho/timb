@@ -3,15 +3,13 @@
 #include "common.hpp"
 #include "expr.hpp"
 #include "numpy_utils.hpp"
-#include "problem.hpp"
+#include "optimizer.hpp"
 #include <boost/bind.hpp>
-
-#define TEST_LINEARIZATION 0
-
 
 vector<Var> g_all_vars; // TODO: remove
 void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
   vector<string> names;
+  names.reserve(f.grid_params().nx * f.grid_params().ny);
   for (int i = 0; i < f.grid_params().nx; ++i) {
     for (int j = 0; j < f.grid_params().ny; ++j) {
       names.push_back((boost::format("%s_%d_%d") % prefix % i % j).str());
@@ -31,36 +29,92 @@ void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
   }
 }
 
-struct FlowRigidityCost : public QuadraticCostFunc {
-  FlowRigidityCost(const VarField& u_x, const VarField& u_y) : QuadraticCostFunc("flow_rigidity") {
-    const GridParams& p = u_x.grid_params();
-    AffExprField u_x_x(p), u_x_y(p), u_y_x(p), u_y_y(p);
-    gradient(u_x, u_x_x, u_x_y);
-    gradient(u_y, u_y_x, u_y_y);
-    QuadExpr expr(0);
-    for (int i = 0; i < p.nx; ++i) {
-      for (int j = 0; j < p.ny; ++j) {
-        // ||J + J^T||^2
-        exprInc(expr, exprSquare(2.*u_x_x(i,j)));
-        exprInc(expr, 2*exprSquare(u_x_y(i,j) + u_y_x(i,j)));
-        exprInc(expr, exprSquare(2.*u_y_y(i,j)));
+
+struct FlowRigidityCost : public CostFunc {
+  const GridParams m_gp;
+  const VarField m_u_x, m_u_y;
+  AffExprField m_u_x_x, m_u_x_y, m_u_y_x, m_u_y_y; // derivatives
+  DoubleField m_u_x_x_vals, m_u_x_y_vals, m_u_y_x_vals, m_u_y_y_vals; // derivatives
+
+  FlowRigidityCost(const VarField& u_x, const VarField& u_y) :
+      m_gp(u_x.grid_params()),
+      m_u_x(u_x), m_u_y(u_y),
+      m_u_x_x(m_gp), u_x_y(m_gp), u_y_x(m_gp), u_y_y(m_gp) {
+    assert(u_y.grid_params() == m_gp);
+    gradient(u_x, m_u_x_x, m_u_x_y);
+    gradient(u_y, m_u_y_x, m_u_y_y);
+  }
+
+  virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd>& out) {
+    gradient(u_x, m_u_x_x_vals, m_u_x_y_vals);
+    gradient(u_y, m_u_y_x_vals, m_u_y_y_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        out(k++) = 2.*m_u_x_x_vals(i,j);
+        out(k++) = SQRT2*(m_u_x_y_vals(i,j) + m_u_y_x_vals(i,j));
+        out(k++) = 2.*m_u_y_y_vals(i,j);
       }
     }
-    init_from_expr(expr);
   }
+
+  virtual void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        lin.set_by_expr(k++, 2.*m_u_x_x(i,j));
+        lin.set_by_expr(k++, SQRT2*(m_u_x_y(i,j) + m_u_y_x(i,j)));
+        lin.set_by_expr(k++, 2.*m_u_y_y(i,j));
+      }
+    }
+  }
+
+  string name() const { return "flow_rigidity"; }
+  int num_residuals() const { return 3 * m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return true; }
 };
 
-struct FlowNormCost : public QuadraticCostFunc {
-  FlowNormCost(const VarField& u_x, const VarField& u_y) : QuadraticCostFunc("flow_norm") {
-    const GridParams& p = u_x.grid_params();
-    QuadExpr expr;
-    for (int i = 0; i < p.nx; ++i) {
-      for (int j = 0; j < p.ny; ++j) {
-        exprInc(expr, exprSquare(u_x(i,j)));
-        exprInc(expr, exprSquare(u_y(i,j)));
+struct FlowNormCost : public CostFunc {
+  const GridParams m_gp;
+  const VarField m_u_x, m_u_y;
+
+  const DoubleField m_u_x_vals, m_u_y_vals;
+
+  FlowNormCost(const VarField& u_x, const VarField& u_y) :
+      m_gp(u_x.grid_params()),
+      m_u_x(u_x), m_u_y(u_y),
+      m_u_x_vals(m_gp), m_u_y_vals(m_gp) {
+    assert(u_y.grid_params() == m_gp);
+  }
+
+  string name() const { return "flow_norm"; }
+  int num_residuals() const { return 2 * m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return true; }
+
+  virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd>& out) {
+    extract_field_values(x, m_u_x, m_u_x_vals);
+    extract_field_values(x, m_u_y, m_u_y_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        out(k++) = m_u_x_vals(i,j);
+        out(k++) = m_u_y_vals(i,j);
       }
     }
-    init_from_expr(expr);
+    assert(k == num_residuals());
+  }
+
+  virtual void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        lin.set_by_expr(k++, m_u_x(i,j));
+        lin.set_by_expr(k++, m_u_y(i,j));
+      }
+    }
+    assert(k == num_residuals());
   }
 };
 
@@ -120,11 +174,6 @@ struct ObservationCost : public CostFunc {
     // that represents the current TSDF with the flow field held fixed
     apply_flow(m_phi, m_tmp_u_x_vals, m_tmp_u_y_vals, m_tmp_curr_phi);
 
-#if TEST_LINEARIZATION
-    AffExprField numdiff_curr_phi(gp);
-    linearize_curr_phi(x, numdiff_curr_phi);
-#endif
-
     QuadExpr expr;
     // add on contributions from linearizing wrt u
     for (int i = 0; i < gp.nx; ++i) {
@@ -139,70 +188,12 @@ struct ObservationCost : public CostFunc {
           - prev_phi_grad.x*(m_u_x(i,j) - m_tmp_u_x_vals(i,j))
           - prev_phi_grad.y*(m_u_y(i,j) - m_tmp_u_y_vals(i,j))
         );
-#if TEST_LINEARIZATION
-        // std::cout << "analytical: " << val << std::endl;
-        // std::cout << "numerical:  " << numdiff_curr_phi(i,j) << '\n' << std::endl;
-        assert(close(val, numdiff_curr_phi(i,j)));
-#endif
         exprInc(expr, m_weights(i,j) * exprSquare(val - m_vals(i,j)));
       }
     }
 
     return QuadFunctionPtr(new QuadFunction(expr));
   }
-
-
-private:
-
-#if TEST_LINEARIZATION
-  // numerically linearize flowed SDF
-  void linearize_curr_phi(const VectorXd& x, AffExprField& out) {
-    assert(g_all_vars.size() == x.size() && out.grid_params() == m_phi.grid_params());
-    DoubleField c(apply_flow_x(x));
-    for (int i = 0; i < m_phi.grid_params().nx; ++i) {
-      for (int j = 0; j < m_phi.grid_params().ny; ++j) {
-        out(i,j) = AffExpr(c(i,j));
-      }
-    }
-
-    VectorXd tmp_x(x);
-    double eps = 1e-7;
-    for (int z = 0; z < x.size(); ++z) {
-      tmp_x(z) = x(z) + eps;
-      DoubleField b(apply_flow_x(tmp_x));
-
-      tmp_x(z) = x(z) - eps;
-      DoubleField a(apply_flow_x(tmp_x));
-
-      tmp_x(z) = x(z);
-
-      for (int i = 0; i < m_phi.grid_params().nx; ++i) {
-        for (int j = 0; j < m_phi.grid_params().ny; ++j) {
-          double dydx = (b(i,j) - a(i,j)) / (2.*eps);
-          exprInc(out(i,j), dydx*(g_all_vars[z] - x(z)));
-        }
-      }
-    }
-
-    for (int i = 0; i < m_phi.grid_params().nx; ++i) {
-      for (int j = 0; j < m_phi.grid_params().ny; ++j) {
-        out(i,j) = cleanupAff(out(i,j));
-      }
-    }
-  }
-
-  // for numdiff: extract variable values and produce the flowed SDF
-  DoubleField apply_flow_x(const VectorXd &x) {
-    const GridParams& gp = m_phi.grid_params();
-    DoubleField tmp_phi_vals(gp), tmp_u_x_vals(gp), tmp_u_y_vals(gp), out(gp);
-    extract_values(x, m_phi, tmp_phi_vals);
-    extract_values(x, m_u_x, tmp_u_x_vals);
-    extract_values(x, m_u_y, tmp_u_y_vals);
-    apply_flow(tmp_phi_vals, tmp_u_x_vals, tmp_u_y_vals, out);
-    return out;
-  }
-
-#endif // TEST_LINEARIZATION
 };
 
 struct PriorCost : public QuadraticCostFunc {

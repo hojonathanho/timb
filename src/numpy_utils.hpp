@@ -90,7 +90,21 @@ void fromNdarray(py::object a, Eigen::DenseBase<Derived>& out) {
     throw std::runtime_error((boost::format("expected 2-d array, got %d-d instead") % py::len(shape)).str());
   }
   a = ensureFormat<T>(a);
+  std::cout << "about to do this" << std::endl;
+  std::cout << py::extract<int>(shape[0]) << ' ' << py::extract<int>(shape[1]) << ' ' << out.rows() << ' ' << out.cols() << std::endl;
   out = RowMajorMapT(getPointer<T>(a), py::extract<int>(shape[0]), py::extract<int>(shape[1]));
+}
+
+template<typename Derived>
+void from1darray(py::object a, Eigen::DenseBase<Derived>& out) {
+  typedef typename Eigen::DenseBase<Derived>::Scalar T;
+  typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> > RowMajorMapT;
+  py::object shape = a.attr("shape");
+  if (py::len(shape) != 1) {
+    throw std::runtime_error((boost::format("expected 1-d array, got %d-d instead") % py::len(shape)).str());
+  }
+  a = ensureFormat<T>(a);
+  out = RowMajorMapT(getPointer<T>(a), py::extract<int>(shape[0]), 1);
 }
 
 } // namespace util

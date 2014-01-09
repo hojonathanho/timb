@@ -20,6 +20,7 @@ struct Var {
   explicit Var(VarRep* rep) : rep(rep) {}
   Var(const Var& other) : rep(other.rep) {}
   double value(const Eigen::VectorXd& x) const {return x(rep->index);}
+  string name() const { return rep->name; }
 };
 
 class VarFactory {

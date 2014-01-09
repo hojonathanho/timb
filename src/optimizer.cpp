@@ -6,6 +6,7 @@ using std::printf;
 using std::map;
 
 #include <boost/timer.hpp>
+#include <boost/format.hpp>
 
 #include <Eigen/CholmodSupport>
 
@@ -189,7 +190,11 @@ struct OptimizerImpl {
         numdiff_cost(cost, x, numdiff_exprs);
         FAIL_IF_FALSE(numdiff_exprs.size() == lin->exprs().size());
         for (int z = 0; z < numdiff_exprs.size(); ++z) {
-          FAIL_IF_FALSE(close(numdiff_exprs[z], lin->exprs()[z]));
+          if (!close(numdiff_exprs[z], lin->exprs()[z])) {
+            std::stringstream s1, s2;
+            s1 << numdiff_exprs[z]; s2 << lin->exprs()[z];
+            PRINT_AND_THROW((boost::format("Cost %s: numdiff %s, analytical %s not close") % cost->name() % s1.str() % s2.str()).str());
+          }
         }
         LOG_DEBUG("Cost %s passed derivative check", cost->name().c_str());
       }

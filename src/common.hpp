@@ -37,3 +37,5 @@ inline T clip(T x, T lo, T hi) {
 
 template<typename T>
 inline T square(const T& x) { return x*x; }
+
+#define SQRT2 1.41421356237

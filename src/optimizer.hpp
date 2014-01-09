@@ -4,80 +4,6 @@
 #include "expr.hpp"
 #include <boost/function.hpp>
 
-#if 0
-class QuadFunction {
-public:
-  typedef Eigen::SparseMatrix<double> SparseMatrixT;
-  typedef Eigen::SparseSelfAdjointView<SparseMatrixT, Eigen::Lower> SparseSelfAdjointViewT;
-
-  QuadFunction(const QuadExpr& expr) : m_quad_expr(expr), m_initialized(false) { }
-
-  void init_with_num_vars(int n) { if (!m_initialized) init_from_expr(n, m_quad_expr); }
-
-  const SparseSelfAdjointViewT A() const { assert(m_initialized); return m_A.selfadjointView<Eigen::Lower>(); }
-  const SparseMatrixT& A_lower() const { assert(m_initialized); return m_A; } // warning: only lower triangle filled out!
-  const Eigen::VectorXd& b() const { assert(m_initialized); return m_b; }
-  double c() const { assert(m_initialized); return m_c; }
-
-  double value(const Eigen::VectorXd& x) const {
-    // if sparse matrices filled, out, use those
-    // otherwise just call the quad expr's evaluate method
-    if (m_initialized) {
-      assert(x.size() == m_b.size());
-      return .5*x.dot(A()*x) + m_b.dot(x) + m_c;
-    }
-    return m_quad_expr.value(x);
-  }
-
-  const QuadExpr& expr() const { return m_quad_expr; }
-
-  void add_to(SparseMatrixT& other_A_lower, VectorXd& other_b, double& other_c, double coeff=1.) const {
-    other_A_lower += coeff * A_lower();
-    other_b += coeff * b();
-    other_c += coeff * c();
-  }
-
-private:
-  // 1/2 x^T A x + b^T x + c
-  SparseMatrixT m_A; // lower triangle only
-  Eigen::VectorXd m_b;
-  double m_c;
-
-  bool m_initialized; // true if sparse data was filled out
-  const QuadExpr m_quad_expr;
-
-  void init_from_expr(int num_vars, const QuadExpr &expr) {
-    // quadratic part
-    m_A.resize(num_vars, num_vars);
-    m_A.setZero();
-    typedef Eigen::Triplet<double> T;
-    vector<T> triplets;
-    triplets.reserve(expr.size());
-    for (int i = 0; i < expr.size(); ++i) {
-      int ind1 = expr.vars1[i].rep->index, ind2 = expr.vars2[i].rep->index;
-      // only fill in lower triangle
-      if (ind1 < ind2) { std::swap(ind1, ind2); }
-      double coeff = expr.coeffs[i];
-      if (ind1 == ind2) { coeff *= 2; }
-      triplets.push_back(T(ind1, ind2, coeff));
-    }
-    m_A.setFromTriplets(triplets.begin(), triplets.end());
-
-    // affine part
-    m_b.resize(num_vars);
-    m_b.setZero();
-    for (int i = 0; i < expr.affexpr.size(); ++i) {
-      m_b(expr.affexpr.vars[i].rep->index) += expr.affexpr.coeffs[i];
-    }
-
-    m_c = expr.affexpr.constant;
-
-    m_initialized = true;
-  }
-};
-typedef boost::shared_ptr<QuadFunction> QuadFunctionPtr;
-#endif
-
 class CostFuncLinearization {
 public:
   typedef Eigen::Triplet<double> TripletT;
@@ -156,6 +82,7 @@ struct OptParams {
 
   OptParams();
 };
+// typedef boost::shared_ptr<OptParams> OptParamsPtr;
 
 enum OptStatus {
   OPT_INCOMPLETE=0, OPT_CONVERGED, OPT_ITER_LIMIT

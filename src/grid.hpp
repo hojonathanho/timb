@@ -4,9 +4,9 @@
 #include <vector>
 
 struct GridParams {
-  const double xmin, xmax, ymin, ymax;
-  const int nx, ny;
-  const double eps_x, eps_y;
+  const double xmin, xmax, ymin, ymax; // grid limits (world coordinates)
+  const int nx, ny; // number of grid points in each direction
+  const double eps_x, eps_y; // distance between points
   GridParams(double xmin_, double xmax_, double ymin_, double ymax_, int nx_, int ny_)
     : xmin(xmin_), xmax(xmax_), ymin(ymin_), ymax(ymax_), nx(nx_), ny(ny_),
       eps_x((xmax_ - xmin_)/(nx_ - 1.)),
