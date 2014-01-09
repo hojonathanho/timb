@@ -92,7 +92,7 @@ struct PyOptimizer : public Optimizer {
     return util::toPyList(out);
   }
   void py_add_cost_1(CostFuncPtr cost) { add_cost(cost); }
-  void py_add_cost_2(CostFuncPtr cost, double coeff=1.) { add_cost(cost, coeff); }
+  void py_add_cost_2(CostFuncPtr cost, double coeff) { add_cost(cost, coeff); }
   PyOptResultPtr py_optimize(py::object py_start_x) {
     VectorXd start_x;
     util::from1darray(py_start_x, start_x);
@@ -109,10 +109,18 @@ static VarField py_make_var_field(PyOptimizerPtr py_opt, const string& prefix, c
   return out;
 }
 
+static py::object py_apply_flow(const GridParams& gp, py::object py_phi, py::object py_u_x, py::object py_u_y) {
+  DoubleField phi(gp), u_x(gp), u_y(gp), flowed_phi(gp);
+  from_numpy(py_phi, phi);
+  from_numpy(py_u_x, u_x);
+  from_numpy(py_u_y, u_y);
+  apply_flow(phi, u_x, u_y, flowed_phi);
+  return to_numpy(flowed_phi);
+}
 
-struct SimpleCost : public CostFunc {
+struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
-  SimpleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
+  ExampleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
   string name() const { return m_name; }
   int num_residuals() const { return 1; }
   bool is_linear() const { return true; }
@@ -123,7 +131,7 @@ struct SimpleCost : public CostFunc {
     lin.set_by_expr(0, m_var - m_c);
   }
 };
-typedef boost::shared_ptr<SimpleCost> SimpleCostPtr;
+typedef boost::shared_ptr<ExampleCost> ExampleCostPtr;
 
 
 
@@ -193,8 +201,9 @@ BOOST_PYTHON_MODULE(ctimbpy) {
 
   py::class_<VarField>("VarField", py::no_init);
   py::def("make_var_field", &py_make_var_field);
+  py::def("apply_flow", &py_apply_flow);
 
-  py::class_<SimpleCost, SimpleCostPtr, py::bases<CostFunc> >("SimpleCost", py::init<const Var&, double, const string&>());
+  py::class_<ExampleCost, ExampleCostPtr, py::bases<CostFunc> >("ExampleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
   py::class_<FlowRigidityCost, FlowRigidityCostPtr, py::bases<CostFunc> >("FlowRigidityCost", py::init<const VarField&, const VarField&>());
   py::class_<ObservationCost, ObservationCostPtr, py::bases<CostFunc> >("ObservationCost", py::init<const VarField&>())

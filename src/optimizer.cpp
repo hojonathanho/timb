@@ -20,7 +20,7 @@ OptParams::OptParams() :
   grad_convergence_tol(1e-8),
   approx_improve_rel_tol(1e-8),
   max_iter(100),
-  check_linearizations(true)
+  check_linearizations(false)
 { }
 
 string OptParams::str() const {
@@ -230,6 +230,9 @@ struct OptimizerImpl {
 
     boost::timer total_timer;
     LOG_INFO("Running optimizer with parameters:\n%s", m_params.str().c_str());
+    if (m_params.check_linearizations) {
+      LOG_WARN("Numerical derivative checking enabled!");
+    }
 
     m_cost2lin.clear();
 

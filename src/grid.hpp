@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.hpp"
+#include "optimizer.hpp"
 #include <vector>
 
 struct GridParams {

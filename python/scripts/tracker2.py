@@ -1,6 +1,6 @@
 import numpy as np
 import interpolation as interp
-import ctimbpy
+import timb
 
 np.set_printoptions(linewidth=1000)
 
@@ -18,6 +18,8 @@ def test1():
   SIZE = 5
   WORLD_MIN = (0., 0.)
   WORLD_MAX = (SIZE-1., SIZE-1.)
+  gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
+
 
   # initial state: zero precision
   init_phi = np.empty((SIZE, SIZE)); init_phi.fill(-1.)
@@ -37,11 +39,11 @@ def test1():
     [2, 1, 0, 0, 0]
   ]).astype(float)
 
-  prob = ctimbpy.TrackingProblem(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
-  prob.set_obs(obs_vals, obs_mask)
-  prob.set_prior(init_phi, init_omega)
+  tracker = timb.Tracker(gp)
+  tracker.observation_cost.set_observation(obs_vals, obs_mask)
+  tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
 
-  result = prob.optimize()
+  result = tracker.optimize()
   print_result(result)
 
   desired = np.array([
@@ -299,4 +301,4 @@ def test_image():
     curr_phi, curr_omega = run(angle, curr_phi, curr_omega)
 
 if __name__ == '__main__':
-  test_image()
+  test1()

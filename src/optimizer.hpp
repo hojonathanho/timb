@@ -16,7 +16,7 @@ public:
     bool store_triplets, // store triplets, for caching linearizations of linear costs
     bool store_exprs) // store expressions, only for checking linearizations
 
-    : m_triplets_ref(triplets_ref)
+    : m_triplets_ref(triplets_ref),
       m_num_residuals(num_residuals),
       m_row_offset(row_offset),
       m_weight(weight),

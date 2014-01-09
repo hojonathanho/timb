@@ -4,11 +4,10 @@ import ctimbpy
 opt = ctimbpy.Optimizer()
 x, y = opt.add_vars(['x', 'y'])
 opt.params().max_iter = 4
+opt.params().check_linearizations = False
 
-#cost_x = ctimbpy.SimpleCost(x, 3, 'cost_x')
-#import IPython; IPython.embed()
-opt.add_cost(ctimbpy.SimpleCost(x, 3, 'cost_x'))
-opt.add_cost(ctimbpy.SimpleCost(y, -1, 'cost_y'))
+opt.add_cost(ctimbpy.ExampleCost(x, 3, 'cost_x'))
+opt.add_cost(ctimbpy.ExampleCost(y, -1, 'cost_y'))
 
 print 'num vars', opt.num_vars()
 
