@@ -32,11 +32,7 @@ struct PyTrackingProblemResult {
 };
 typedef boost::shared_ptr<PyTrackingProblemResult> PyTrackingProblemResultPtr;
 */
-// void to_scalar_field(py::object py, DoubleField& out) {
-//   MatrixXd data;
-//   util::fromNdarray(py, data); // TODO: extra memory copy here?
-//   from_eigen(data, out);
-// }
+
 /*
 class PyTrackingProblem : public TrackingProblem {
 public:
@@ -71,26 +67,6 @@ public:
 typedef boost::shared_ptr<PyTrackingProblem> PyTrackingProblemPtr;
 */
 
-template<typename T>
-vector<T> from_py_list(const py::list& lst) {
-  vector<T> out;
-  const int n = py::len(lst);
-  out.reserve(n);
-  for (int i = 0; i < n; ++i) {
-    out.push_back(py::extract<T>(lst[i]));
-  }
-  return out;
-}
-
-template<typename T>
-py::list to_py_list(const vector<T>& vec) {
-  py::list lst;
-  for (const T& x : vec) {
-    lst.append(x);
-  }
-  return lst;
-}
-
 struct PyOptResult : public OptResult {
   py::object py_x;
   py::object py_cost_vals;
@@ -100,7 +76,7 @@ struct PyOptResult : public OptResult {
     py_x = util::toNdarray1(o->x.data(), o->x.size());
     cost = o->cost;
     py_cost_vals = util::toNdarray1(o->cost_vals.data(), o->cost_vals.size());
-    py_cost_over_iters = to_py_list(o->cost_over_iters);
+    py_cost_over_iters = util::toPyList(o->cost_over_iters);
     n_func_evals = o->n_func_evals;
     n_jacobian_evals = o->n_jacobian_evals;
     n_qp_solves = o->n_qp_solves;
@@ -112,8 +88,8 @@ typedef boost::shared_ptr<PyOptResult> PyOptResultPtr;
 struct PyOptimizer : public Optimizer {
   py::list py_add_vars(py::list py_names) {
     vector<Var> out;
-    add_vars(from_py_list<string>(py_names), out);
-    return to_py_list(out);
+    add_vars(util::toVec<string>(py_names), out);
+    return util::toPyList(out);
   }
   void py_add_cost_1(CostFuncPtr cost) { add_cost(cost); }
   void py_add_cost_2(CostFuncPtr cost, double coeff=1.) { add_cost(cost, coeff); }
@@ -148,6 +124,7 @@ struct SimpleCost : public CostFunc {
   }
 };
 typedef boost::shared_ptr<SimpleCost> SimpleCostPtr;
+
 
 
 
@@ -220,6 +197,12 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<SimpleCost, SimpleCostPtr, py::bases<CostFunc> >("SimpleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
   py::class_<FlowRigidityCost, FlowRigidityCostPtr, py::bases<CostFunc> >("FlowRigidityCost", py::init<const VarField&, const VarField&>());
+  py::class_<ObservationCost, ObservationCostPtr, py::bases<CostFunc> >("ObservationCost", py::init<const VarField&>())
+    .def("set_observation", &ObservationCost::py_set_observation)
+    ;
+  py::class_<AgreementCost, AgreementCostPtr, py::bases<CostFunc> >("AgreementCost", py::init<const VarField&, const VarField&, const VarField&>())
+    .def("set_prev_phi_and_weights", &AgreementCost::py_set_prev_phi_and_weights)
+    ;
 
 /*
   py::class_<TrackingProblemCoeffs, TrackingProblemCoeffsPtr>("TrackingProblemCoeffs")

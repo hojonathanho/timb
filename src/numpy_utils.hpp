@@ -12,10 +12,13 @@ extern py::object np_mod;
 
 void PythonInit();
 
-inline py::list toPyList(const std::vector<int>& x) {
-  py::list out;
-  for (int i=0; i < x.size(); ++i) out.append(x[i]);
-  return out;
+template<typename T>
+py::list toPyList(const std::vector<T>& vec) {
+  py::list lst;
+  for (const T& x : vec) {
+    lst.append(x);
+  }
+  return lst;
 }
 
 template<typename T>
@@ -90,8 +93,6 @@ void fromNdarray(py::object a, Eigen::DenseBase<Derived>& out) {
     throw std::runtime_error((boost::format("expected 2-d array, got %d-d instead") % py::len(shape)).str());
   }
   a = ensureFormat<T>(a);
-  std::cout << "about to do this" << std::endl;
-  std::cout << py::extract<int>(shape[0]) << ' ' << py::extract<int>(shape[1]) << ' ' << out.rows() << ' ' << out.cols() << std::endl;
   out = RowMajorMapT(getPointer<T>(a), py::extract<int>(shape[0]), py::extract<int>(shape[1]));
 }
 

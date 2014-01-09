@@ -5,6 +5,7 @@
 #include "numpy_utils.hpp"
 #include "optimizer.hpp"
 #include "grid.hpp"
+#include "grid_numpy_utils.hpp"
 #include <boost/bind.hpp>
 
 vector<Var> g_all_vars; // TODO: remove
@@ -126,6 +127,123 @@ struct FlowNormCost : public CostFunc {
 };
 typedef boost::shared_ptr<FlowNormCost> FlowNormCostPtr;
 
+struct ObservationCost : public CostFunc {
+  const GridParams m_gp;
+  const VarField m_phi; // next timestep TSDF variables
+  DoubleField m_phi_vals; // current iterate values of TSDF
+  DoubleField m_vals, m_weights; // observation values and weights
+
+  ObservationCost(const VarField& phi)
+    : m_gp(phi.grid_params()),
+      m_phi(phi), m_phi_vals(m_gp),
+      m_vals(m_gp), m_weights(m_gp)
+  { }
+
+  void set_observation(const DoubleField& vals, const DoubleField& weights) {
+    m_vals = vals;
+    m_weights = weights;
+  }
+
+  void py_set_observation(py::object py_vals, py::object py_weights) {
+    from_numpy(py_vals, m_vals);
+    from_numpy(py_weights, m_weights);
+  }
+
+  string name() const { return "observation"; }
+  int num_residuals() const { return m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return true; }
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    extract_field_values(x, m_phi, m_phi_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        out(k++) = sqrt(m_weights(i,j)) * (m_phi_vals(i,j) - m_vals(i,j));
+      }
+    }
+    assert(k == num_residuals());
+  }
+
+  void linearize(const VectorXd&, CostFuncLinearization& lin) {
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        lin.set_by_expr(k++, sqrt(m_weights(i,j)) * (m_phi(i,j) - m_vals(i,j)));
+      }
+    }
+    assert(k == num_residuals());
+  }
+};
+typedef boost::shared_ptr<ObservationCost> ObservationCostPtr;
+
+struct AgreementCost : public CostFunc {
+  const GridParams m_gp;
+  VarField m_phi, m_u_x, m_u_y;
+
+  DoubleField m_prev_phi_vals, m_weights; // user data
+
+  DoubleField m_phi_vals, m_u_x_vals, m_u_y_vals; // temporary memory
+
+  AgreementCost(const VarField& phi, const VarField& u_x, const VarField& u_y)
+    : m_gp(phi.grid_params()),
+      m_phi(phi), m_u_x(u_x), m_u_y(u_y),
+      m_prev_phi_vals(m_gp), m_weights(m_gp),
+      m_phi_vals(m_gp), m_u_x_vals(m_gp), m_u_y_vals(m_gp)
+  { }
+
+  void set_prev_phi_and_weights(const DoubleField& prev_phi, const DoubleField& weights) {
+    m_prev_phi_vals = prev_phi;
+    m_weights = weights;
+  }
+
+  void py_set_prev_phi_and_weights(py::object py_prev_phi, py::object py_weights) {
+    from_numpy(py_prev_phi, m_prev_phi_vals);
+    from_numpy(py_weights, m_weights);
+  }
+
+  string name() const { return "agreement"; }
+  int num_residuals() const { return m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return false; }
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    extract_field_values(x, m_phi, m_phi_vals);
+    extract_field_values(x, m_u_x, m_u_x_vals);
+    extract_field_values(x, m_u_y, m_u_y_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        auto xy = m_gp.to_xy(i, j);
+        double flowed_x = xy.first - m_u_x_vals(i,j), flowed_y = xy.second - m_u_y_vals(i,j);
+        double flowed_prev_phi_val = m_prev_phi_vals.eval_xy(flowed_x, flowed_y);
+        out(k++) = sqrt(m_weights(i,j)) * (m_phi_vals(i,j) - flowed_prev_phi_val);
+      }
+    }
+    assert(k == num_residuals());
+  }
+
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    extract_field_values(x, m_phi, m_phi_vals);
+    extract_field_values(x, m_u_x, m_u_x_vals);
+    extract_field_values(x, m_u_y, m_u_y_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        auto xy = m_gp.to_xy(i, j);
+        double flowed_x = xy.first - m_u_x_vals(i,j), flowed_y = xy.second - m_u_y_vals(i,j);
+        double flowed_prev_phi_val = m_prev_phi_vals.eval_xy(flowed_x, flowed_y);
+        auto prev_phi_grad = m_prev_phi_vals.grad_xy(flowed_x, flowed_y);
+        AffExpr phi_expr = m_phi(i,j) + prev_phi_grad.x*(m_u_x(i,j) - m_u_x_vals(i,j)) + prev_phi_grad.y*(m_u_y(i,j) - m_u_y_vals(i,j));
+        // TODO: negate gradient?
+        lin.set_by_expr(k++, sqrt(m_weights(i,j)) * (phi_expr - flowed_prev_phi_val));
+      }
+    }
+    assert(k == num_residuals());
+  }
+};
+typedef boost::shared_ptr<AgreementCost> AgreementCostPtr;
 
 #if 0
 struct ObservationCost : public CostFunc {
