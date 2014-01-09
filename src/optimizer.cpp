@@ -23,6 +23,24 @@ OptParams::OptParams() :
   check_linearizations(true)
 { }
 
+string OptParams::str() const {
+  return (boost::format(
+    "init_trust_region_size:% 3.2e\n"
+    "min_trust_region_size:% 3.2e\n"
+    "grad_convergence_tol:% 3.2e\n"
+    "approx_improve_rel_tol:% 3.2e\n"
+    "max_iter:% d\n"
+    "check_linearizations:% d"
+    )
+    % init_trust_region_size
+    % min_trust_region_size
+    % grad_convergence_tol
+    % approx_improve_rel_tol
+    % max_iter
+    % check_linearizations
+  ).str();
+}
+
 static string status_to_str(OptStatus s) {
   switch (s) {
   case OPT_INCOMPLETE:
@@ -211,6 +229,9 @@ struct OptimizerImpl {
     assert(start_x.size() == num_vars());
 
     boost::timer total_timer;
+    LOG_INFO("Running optimizer with parameters:\n%s", m_params.str().c_str());
+
+    m_cost2lin.clear();
 
     bool converged = false;
     int iter = 0;

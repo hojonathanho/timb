@@ -4,7 +4,7 @@
 #include <sstream>
 #include "common.hpp"
 
-// #include "tracking_problem.hpp"
+#include "tracking_problem.hpp"
 #include "logging.hpp"
 #include "numpy_utils.hpp"
 #include "optimizer.hpp"
@@ -126,6 +126,14 @@ struct PyOptimizer : public Optimizer {
 };
 typedef boost::shared_ptr<PyOptimizer> PyOptimizerPtr;
 
+
+static VarField py_make_var_field(PyOptimizerPtr py_opt, const string& prefix, const GridParams& gp) {
+  VarField out(gp);
+  make_field_vars(prefix, *py_opt, out);
+  return out;
+}
+
+
 struct SimpleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
   SimpleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
@@ -156,6 +164,17 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<Var>("Var")
     .add_property("name", &Var::name)
     .def("__repr__", &Var::name)
+    ;
+
+  py::class_<GridParams>("GridParams", py::init<double, double, double, double, int, int>())
+    .def_readonly("xmin", &GridParams::xmin)
+    .def_readonly("xmax", &GridParams::xmax)
+    .def_readonly("ymin", &GridParams::ymin)
+    .def_readonly("ymax", &GridParams::ymax)
+    .def_readonly("nx", &GridParams::nx)
+    .def_readonly("ny", &GridParams::ny)
+    .def_readonly("eps_x", &GridParams::eps_x)
+    .def_readonly("eps_y", &GridParams::eps_y)
     ;
 
   py::enum_<OptStatus>("OptStatus")
@@ -195,8 +214,12 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     // Don't expose anything. Only subclasses should be used from Python
     ;
 
-  py::class_<SimpleCost, SimpleCostPtr, py::bases<CostFunc> >("SimpleCost", py::init<const Var&, double, const string&>())
-    ;
+  py::class_<VarField>("VarField", py::no_init);
+  py::def("make_var_field", &py_make_var_field);
+
+  py::class_<SimpleCost, SimpleCostPtr, py::bases<CostFunc> >("SimpleCost", py::init<const Var&, double, const string&>());
+  py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
+  py::class_<FlowRigidityCost, FlowRigidityCostPtr, py::bases<CostFunc> >("FlowRigidityCost", py::init<const VarField&, const VarField&>());
 
 /*
   py::class_<TrackingProblemCoeffs, TrackingProblemCoeffsPtr>("TrackingProblemCoeffs")

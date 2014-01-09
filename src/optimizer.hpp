@@ -81,6 +81,7 @@ struct OptParams {
   bool check_linearizations;
 
   OptParams();
+  string str() const;
 };
 // typedef boost::shared_ptr<OptParams> OptParamsPtr;
 

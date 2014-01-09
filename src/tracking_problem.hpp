@@ -4,6 +4,7 @@
 #include "expr.hpp"
 #include "numpy_utils.hpp"
 #include "optimizer.hpp"
+#include "grid.hpp"
 #include <boost/bind.hpp>
 
 vector<Var> g_all_vars; // TODO: remove
@@ -33,21 +34,26 @@ void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
 struct FlowRigidityCost : public CostFunc {
   const GridParams m_gp;
   const VarField m_u_x, m_u_y;
+  DoubleField m_u_x_vals, m_u_y_vals;
   AffExprField m_u_x_x, m_u_x_y, m_u_y_x, m_u_y_y; // derivatives
   DoubleField m_u_x_x_vals, m_u_x_y_vals, m_u_y_x_vals, m_u_y_y_vals; // derivatives
 
   FlowRigidityCost(const VarField& u_x, const VarField& u_y) :
       m_gp(u_x.grid_params()),
       m_u_x(u_x), m_u_y(u_y),
-      m_u_x_x(m_gp), u_x_y(m_gp), u_y_x(m_gp), u_y_y(m_gp) {
+      m_u_x_vals(m_gp), m_u_y_vals(m_gp),
+      m_u_x_x(m_gp), m_u_x_y(m_gp), m_u_y_x(m_gp), m_u_y_y(m_gp),
+      m_u_x_x_vals(m_gp), m_u_x_y_vals(m_gp), m_u_y_x_vals(m_gp), m_u_y_y_vals(m_gp) {
     assert(u_y.grid_params() == m_gp);
     gradient(u_x, m_u_x_x, m_u_x_y);
     gradient(u_y, m_u_y_x, m_u_y_y);
   }
 
-  virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd>& out) {
-    gradient(u_x, m_u_x_x_vals, m_u_x_y_vals);
-    gradient(u_y, m_u_y_x_vals, m_u_y_y_vals);
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    extract_field_values(x, m_u_x, m_u_x_vals);
+    extract_field_values(x, m_u_y, m_u_y_vals);
+    gradient(m_u_x_vals, m_u_x_x_vals, m_u_x_y_vals);
+    gradient(m_u_y_vals, m_u_y_x_vals, m_u_y_y_vals);
 
     int k = 0;
     for (int i = 0; i < m_gp.nx; ++i) {
@@ -59,7 +65,7 @@ struct FlowRigidityCost : public CostFunc {
     }
   }
 
-  virtual void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
     int k = 0;
     for (int i = 0; i < m_gp.nx; ++i) {
       for (int j = 0; j < m_gp.ny; ++j) {
@@ -74,12 +80,13 @@ struct FlowRigidityCost : public CostFunc {
   int num_residuals() const { return 3 * m_gp.nx * m_gp.ny; }
   bool is_linear() const { return true; }
 };
+typedef boost::shared_ptr<FlowRigidityCost> FlowRigidityCostPtr;
 
 struct FlowNormCost : public CostFunc {
   const GridParams m_gp;
   const VarField m_u_x, m_u_y;
 
-  const DoubleField m_u_x_vals, m_u_y_vals;
+  DoubleField m_u_x_vals, m_u_y_vals;
 
   FlowNormCost(const VarField& u_x, const VarField& u_y) :
       m_gp(u_x.grid_params()),
@@ -92,7 +99,7 @@ struct FlowNormCost : public CostFunc {
   int num_residuals() const { return 2 * m_gp.nx * m_gp.ny; }
   bool is_linear() const { return true; }
 
-  virtual void eval(const VectorXd& x, Eigen::Ref<VectorXd>& out) {
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
     extract_field_values(x, m_u_x, m_u_x_vals);
     extract_field_values(x, m_u_y, m_u_y_vals);
 
@@ -106,18 +113,21 @@ struct FlowNormCost : public CostFunc {
     assert(k == num_residuals());
   }
 
-  virtual void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
     int k = 0;
     for (int i = 0; i < m_gp.nx; ++i) {
       for (int j = 0; j < m_gp.ny; ++j) {
-        lin.set_by_expr(k++, m_u_x(i,j));
-        lin.set_by_expr(k++, m_u_y(i,j));
+        lin.set_by_expr(k++, AffExpr(m_u_x(i,j)));
+        lin.set_by_expr(k++, AffExpr(m_u_y(i,j)));
       }
     }
     assert(k == num_residuals());
   }
 };
+typedef boost::shared_ptr<FlowNormCost> FlowNormCostPtr;
 
+
+#if 0
 struct ObservationCost : public CostFunc {
   const VarField& m_phi, m_u_x, m_u_y;
 
@@ -195,7 +205,9 @@ struct ObservationCost : public CostFunc {
     return QuadFunctionPtr(new QuadFunction(expr));
   }
 };
+#endif
 
+#if 0
 struct PriorCost : public QuadraticCostFunc {
   const VarField& m_phi;
   PriorCost(const VarField& phi) : m_phi(phi), QuadraticCostFunc("prior") { }
@@ -213,6 +225,7 @@ struct PriorCost : public QuadraticCostFunc {
     init_from_expr(expr);
   }
 };
+
 
 struct TrackingProblemContext {
   const GridParams grid_params;
@@ -382,3 +395,4 @@ protected:
   }
 };
 typedef boost::shared_ptr<TrackingProblem> TrackingProblemPtr;
+#endif

@@ -3,6 +3,7 @@ import ctimbpy
 
 opt = ctimbpy.Optimizer()
 x, y = opt.add_vars(['x', 'y'])
+opt.params().max_iter = 4
 
 #cost_x = ctimbpy.SimpleCost(x, 3, 'cost_x')
 #import IPython; IPython.embed()
