@@ -8,8 +8,21 @@ class CostFuncLinearization {
 public:
   typedef Eigen::Triplet<double> TripletT;
 
-  CostFuncLinearization(vector<TripletT>& triplets, int num_residuals, int row_offset, double weight, bool store_triplets, bool store_exprs) :
-      m_triplets(triplets), m_num_residuals(num_residuals), m_row_offset(row_offset), m_weight(weight), m_store_triplets(store_triplets), m_store_exprs(store_exprs) {
+  CostFuncLinearization(
+    vector<TripletT>& triplets_ref,
+    int num_residuals,
+    int row_offset,
+    double weight,
+    bool store_triplets, // store triplets, for caching linearizations of linear costs
+    bool store_exprs) // store expressions, only for checking linearizations
+
+    : m_triplets_ref(triplets_ref)
+      m_num_residuals(num_residuals),
+      m_row_offset(row_offset),
+      m_weight(weight),
+      m_store_triplets(store_triplets),
+      m_store_exprs(store_exprs) {
+
     if (m_store_exprs) {
       m_exprs.resize(m_num_residuals);
     }
@@ -19,7 +32,7 @@ public:
     // assert(0 <= i && i < m_num_residuals);
     for (int j = 0; j < e.size(); ++j) {
       TripletT triplet(m_row_offset + i, e.vars[j].rep->index, m_weight*e.coeffs[j]);
-      m_triplets.push_back(triplet);
+      m_triplets_ref.push_back(triplet);
       if (m_store_triplets) {
         m_stored_triplets.push_back(triplet);
       }
@@ -46,7 +59,7 @@ private:
   const int m_num_residuals;
   const int m_row_offset;
   const double m_weight;
-  vector<TripletT>& m_triplets;
+  vector<TripletT>& m_triplets_ref;
 
   vector<TripletT> m_stored_triplets; // store triplets. used for linear costs only (to avoid relinearizing)
   vector<AffExpr> m_exprs; // only used for numerical checking of gradients
