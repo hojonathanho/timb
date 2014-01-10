@@ -34,11 +34,11 @@ def plot_state(state):
   plt.clf()
   matplotlib.rcParams.update({'font.size': 8})
 
-  TSDF_TRUNC = 10.
+  TSDF_TRUNC = 3.
   plt.subplot(121)
   plt.title('phi')
   plt.axis('off')
-  plt.imshow(state.phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+  plt.imshow(np.flipud(state.phi.T), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
   plt.subplot(122, aspect='equal')
   plt.title('u')

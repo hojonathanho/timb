@@ -119,7 +119,7 @@ def test_should_move():
     [0, 2, 1, 0, 0],
     [0, 2, 1, 0, 0]
   ]).astype(float)
-  init_omega = np.zeros((SIZE, SIZE)); init_omega.fill(100)
+  init_omega = np.zeros((SIZE, SIZE)); init_omega.fill(1.)
   obs_mask = np.array([
     [1, 1, 0, 0, 0],
     [1, 1, 0, 0, 0],
@@ -146,8 +146,11 @@ def test_should_move():
   print_result(result)
   timb.plot_state(result)
 
-  # for i_x in opt_result.x_over_iters:
-  #   timb.plot_state(timb.State.FromPacked(gp, i_x))
+  for i, i_x in enumerate(opt_result.x_over_iters):
+    print i
+    s = timb.State.FromPacked(gp, i_x)
+    print_result(s)
+    timb.plot_state(s)
 
 
 def make_square_img(SIZE, negate_inside=True):
