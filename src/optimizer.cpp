@@ -235,6 +235,7 @@ struct OptimizerImpl {
 
     result->cost_detail.resize(num_costs());
     int pos = 0;
+    // TODO: if there are a lot of costs, just do this, and set result->cost to the sum
     for (int i = 0; i < num_costs(); ++i) {
       int num_resid = m_costs[i]->num_residuals();
       result->cost_detail(i) = fvec.segment(pos, num_resid).squaredNorm();
@@ -250,6 +251,9 @@ struct OptimizerImpl {
     LOG_INFO("Running optimizer with parameters:\n%s", m_params.str().c_str());
     if (m_params.check_linearizations) {
       LOG_WARN("Numerical derivative checking enabled!");
+    }
+    if (m_params.keep_results_over_iterations) {
+      LOG_WARN("Saving values over iterations!")
     }
 
     m_cost2lin.clear();
@@ -271,8 +275,8 @@ struct OptimizerImpl {
     SparseMatrixT fjac(num_residuals(), num_vars());
     SparseMatrixT scaling(num_vars(), num_vars());
 
-    // Eigen::CholmodSupernodalLLT<SparseMatrixT> solver;
-    Eigen::SimplicialLDLT<SparseMatrixT> solver;
+    Eigen::CholmodDecomposition<SparseMatrixT> solver;
+    // Eigen::SimplicialLDLT<SparseMatrixT> solver;
     // Temporary per-iteration data
     SparseMatrixT jtj(num_vars(), num_vars());
     SparseMatrixT lin_lhs(num_vars(), num_vars());
@@ -281,10 +285,12 @@ struct OptimizerImpl {
     VectorXd tmp_residuals(num_residuals());
     VectorXd new_x(num_vars());
 
-    bool x_changed; // whether recomputing linear model is needed, after evaluation
+    bool x_changed = true; // whether recomputing linear model is needed (true if a step is made)
 
     while (!converged && iter < m_params.max_iter) {
-      ++iter;
+      if (x_changed) {
+        ++iter;
+      }
 
       boost::timer iteration_timer;
 
@@ -299,7 +305,6 @@ struct OptimizerImpl {
           scaling.coeffRef(i,i) = fmax(min_scaling, fjac.col(i).norm());
         }
         scaling.makeCompressed();
-        std::cout << "scaling: " << scaling.diagonal().transpose() << std::endl;
       }
 
       const double starting_cost = result->cost;
@@ -331,7 +336,8 @@ struct OptimizerImpl {
       } else {
         // Check delta_x (approx improvement) relative convergence condition
         delta_x_norm = (delta_x.cwiseQuotient(scaling.diagonal())).norm();
-        double delta_x_norm_thresh = m_params.approx_improve_rel_tol*(result->x.norm() + m_params.approx_improve_rel_tol);
+        double delta_x_norm_thresh = m_params.approx_improve_rel_tol*((result->x.cwiseQuotient(scaling.diagonal())).norm() + m_params.approx_improve_rel_tol);
+        LOG_INFO("dx norm thresh %3.10e", delta_x_norm_thresh);
         if (delta_x_norm <= delta_x_norm_thresh) {
           result->status = OPT_CONVERGED;
           LOG_INFO("converged because improvement was small (%.3e < %.3e)", delta_x_norm, delta_x_norm_thresh);
@@ -376,25 +382,20 @@ struct OptimizerImpl {
           damping_increase_factor = 2.;
           expanded_trust_region = true;
 
+          result->cost_over_iters.push_back(result->cost);
+          if (m_params.keep_results_over_iterations) {
+            result->x_over_iters.push_back(result->x);
+          }
+          print_cost_info(starting_cost_detail, result->cost_detail, result->cost_detail);
+
         } else {
           damping *= damping_increase_factor;
           damping_increase_factor *= 2.;
           expanded_trust_region = false;
         }
 
-
-  //       print_cost_info();
-
-        result->cost_over_iters.push_back(result->cost);
-        if (m_params.keep_results_over_iterations) {
-          result->x_over_iters.push_back(result->x);
-        }
-
-        print_cost_info(starting_cost_detail, result->cost_detail, result->cost_detail);
-  // void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& model_cost_vals, const VectorXd& new_cost_vals,
-                       // double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
         LOG_INFO(
-          "% 4d: f:% 8e d:% 3.2e g:% 3.2e h:% 3.2e rho:% 3.2e mu:% 3.2e (%c) li:% 3d it:% 3.2e tt:% 3.2e",
+          "% 4d: f:% 8e d:% 3.10e g:% 3.2e h:% 3.2e rho:% 3.2e mu:% 3.2e (%c) li:% 3d it:% 3.2e tt:% 3.2e",
           iter,
           result->cost,
           starting_cost - result->cost,

@@ -24,7 +24,6 @@ def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
   assert mode in ['accurate', 'projective']
 
   # observe from the left
-  # projective point-to-point metric
   scale = 1.
 
   depth = state_to_pixel_depth(state)
@@ -52,8 +51,8 @@ def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
       if d != np.inf:
         sdf[i,d+1:] *= -1
 
-
   elif mode == 'projective':
+    # projective point-to-point metric
     # fill in sdf by marching away from surface
     sdf = np.zeros_like(state, dtype=float)
     for i in range(state.shape[0]):

@@ -9,7 +9,9 @@ class Coeffs(object):
   observation = 1.
   agreement = 1.
 
+
 Result = namedtuple('Result', ['phi', 'u_x', 'u_y'])
+
 
 class State(object):
   def __init__(self, gp, phi, u_x, u_y):
@@ -27,6 +29,46 @@ class State(object):
 
   def pack(self):
     return np.r_[self.phi.ravel(), self.u_x.ravel(), self.u_y.ravel()]
+
+
+class Tracker(object):
+  def __init__(self, grid_params):
+    self.gp = grid_params
+
+    self.opt = Optimizer()
+    self.phi_vars = make_var_field(self.opt, 'phi', self.gp)
+    self.u_x_vars = make_var_field(self.opt, 'u_x', self.gp)
+    self.u_y_vars = make_var_field(self.opt, 'u_y', self.gp)
+
+    self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
+    self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
+    self.observation_cost = ObservationCost(self.phi_vars)
+    self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
+    self.opt.add_cost(self.flow_norm_cost, Coeffs.flow_norm)
+    self.opt.add_cost(self.flow_rigidity_cost, Coeffs.flow_rigidity)
+    self.opt.add_cost(self.observation_cost, Coeffs.observation)
+    self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
+
+  def optimize(self, init_state):
+    opt_result = self.opt.optimize(init_state.pack())
+
+    # import matplotlib.pyplot as plt
+    # plt.clf()
+    # plt.plot(opt_result.cost_over_iters)
+    # plt.show()
+
+    result = State.FromPacked(self.gp, opt_result.x)
+    # print opt_result.x_over_iters
+    return result, opt_result
+
+
+  # self.observation_cost.set_observation
+  # self.agreement_cost.set_prev_phi_and_weights
+
+
+
+
+# Utility functions
 
 def plot_state(state):
   import matplotlib
@@ -51,45 +93,3 @@ def plot_state(state):
   plot_flow(state.u_x, state.u_y)
 
   plt.show()
-
-
-class Tracker(object):
-  def __init__(self, gp):
-    self.gp = gp
-
-    self.opt = Optimizer()
-    self.phi_vars = make_var_field(self.opt, 'phi', self.gp)
-    self.u_x_vars = make_var_field(self.opt, 'u_x', self.gp)
-    self.u_y_vars = make_var_field(self.opt, 'u_y', self.gp)
-
-    self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
-    self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
-    self.observation_cost = ObservationCost(self.phi_vars)
-    self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
-    self.opt.add_cost(self.flow_norm_cost, Coeffs.flow_norm)
-    self.opt.add_cost(self.flow_rigidity_cost, Coeffs.flow_rigidity)
-    self.opt.add_cost(self.observation_cost, Coeffs.observation)
-    self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
-
-  def optimize(self, init_state):
-    opt_result = self.opt.optimize(init_state.pack())
-    # print list(opt_result.cost_over_iters)
-    # import matplotlib.pyplot as plt
-    # plt.plot(opt_result.cost_over_iters)
-    # plt.show()
-    result = State.FromPacked(self.gp, opt_result.x)
-    # print opt_result.x_over_iters
-    return result, opt_result
-
-
-
-
-
-
-
-
-
-
-
-  # self.observation_cost.set_observation
-  # self.agreement_cost.set_prev_phi_and_weights

@@ -231,7 +231,6 @@ struct AgreementCost : public CostFunc {
         double flowed_prev_phi_val = m_prev_phi_vals.eval_xy(flowed_x, flowed_y);
         auto prev_phi_grad = m_prev_phi_vals.grad_xy(flowed_x, flowed_y);
         AffExpr phi_expr = m_phi(i,j) + prev_phi_grad.x*(m_u_x(i,j) - m_u_x_vals(i,j)) + prev_phi_grad.y*(m_u_y(i,j) - m_u_y_vals(i,j));
-        // TODO: negate gradient?
         lin.set_by_expr(k++, sqrt(m_weights(i,j)) * (phi_expr - flowed_prev_phi_val));
       }
     }
