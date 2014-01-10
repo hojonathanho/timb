@@ -92,6 +92,7 @@ struct OptParams {
   double approx_improve_rel_tol;
   int max_iter;
   bool check_linearizations;
+  bool keep_results_over_iterations;
 
   OptParams();
   string str() const;
@@ -106,8 +107,9 @@ struct OptResult {
   OptStatus status;
 
   VectorXd x;
+  vector<VectorXd> x_over_iters; // stored only if keep_results_over_iterations is true
   double cost;
-  VectorXd cost_vals;
+  VectorXd cost_detail;
   vector<double> cost_over_iters;
 
   int n_func_evals, n_jacobian_evals, n_qp_solves, n_iters;

@@ -7,19 +7,20 @@ np.set_printoptions(linewidth=1000)
 def print_result(r):
   print 'phi'
   print r.phi
-  print 'u'
-  print r.u
-  print 'next_phi'
-  print r.next_phi
-  print 'next_omega'
-  print r.next_omega
+  print 'u_x'
+  print r.u_x
+  print 'u_y'
+  print r.u_y
+  # print 'next_phi'
+  # print r.next_phi
+  # print 'next_omega'
+  # print r.next_omega
 
 def test1():
   SIZE = 5
   WORLD_MIN = (0., 0.)
   WORLD_MAX = (SIZE-1., SIZE-1.)
   gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
-
 
   # initial state: zero precision
   init_phi = np.empty((SIZE, SIZE)); init_phi.fill(-1.)
@@ -40,10 +41,13 @@ def test1():
   ]).astype(float)
 
   tracker = timb.Tracker(gp)
+  tracker.opt.params().check_linearizations = True
   tracker.observation_cost.set_observation(obs_vals, obs_mask)
   tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
 
-  result = tracker.optimize()
+  # initialization: previous phi, zero flow
+  init_state = timb.State(init_phi, np.zeros_like(init_phi), np.zeros_like(init_phi))
+  result = tracker.optimize(init_state)
   print_result(result)
 
   desired = np.array([
@@ -53,7 +57,7 @@ def test1():
     [2, 1, -1, -1, -1],
     [2, 1, -1, -1, -1]
   ])
-  assert abs(desired - result.next_phi).max() < 1e-3
+  assert abs(desired - result.phi).max() < 1e-3
 
 def test2():
   SIZE = 5
@@ -105,6 +109,7 @@ def test_should_move():
   SIZE = 5
   WORLD_MIN = (0., 0.)
   WORLD_MAX = (SIZE-1., SIZE-1.)
+  gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
 
   # initial state: zero precision
   init_phi = np.array([
@@ -130,12 +135,19 @@ def test_should_move():
     [2, 1, 0, 0, 0]
   ]).astype(float)
 
-  prob = ctimbpy.TrackingProblem(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
-  prob.set_obs(obs_vals, obs_mask)
-  prob.set_prior(init_phi, init_omega)
-
-  result = prob.optimize()
+  tracker = timb.Tracker(gp)
+  tracker.opt.params().check_linearizations = True
+  tracker.opt.params().keep_results_over_iterations = True
+  tracker.observation_cost.set_observation(obs_vals, obs_mask)
+  tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
+  # initialization: previous phi, zero flow
+  init_state = timb.State(gp, init_phi, np.zeros_like(init_phi), np.zeros_like(init_phi))
+  result, opt_result = tracker.optimize(init_state)
   print_result(result)
+  timb.plot_state(result)
+
+  # for i_x in opt_result.x_over_iters:
+  #   timb.plot_state(timb.State.FromPacked(gp, i_x))
 
 
 def make_square_img(SIZE, negate_inside=True):
@@ -301,4 +313,4 @@ def test_image():
     curr_phi, curr_omega = run(angle, curr_phi, curr_omega)
 
 if __name__ == '__main__':
-  test1()
+  test_should_move()

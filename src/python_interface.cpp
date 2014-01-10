@@ -69,13 +69,17 @@ typedef boost::shared_ptr<PyTrackingProblem> PyTrackingProblemPtr;
 
 struct PyOptResult : public OptResult {
   py::object py_x;
-  py::object py_cost_vals;
+  py::list py_x_over_iters;
+  py::object py_cost_detail;
   py::object py_cost_over_iters;
   PyOptResult(OptResultPtr o) {
     status = o->status;
     py_x = util::toNdarray1(o->x.data(), o->x.size());
+    for (const VectorXd& x : o->x_over_iters) {
+      py_x_over_iters.append(util::toNdarray1(x.data(), x.size()));
+    }
     cost = o->cost;
-    py_cost_vals = util::toNdarray1(o->cost_vals.data(), o->cost_vals.size());
+    py_cost_detail = util::toNdarray1(o->cost_detail.data(), o->cost_detail.size());
     py_cost_over_iters = util::toPyList(o->cost_over_iters);
     n_func_evals = o->n_func_evals;
     n_jacobian_evals = o->n_jacobian_evals;
@@ -142,8 +146,8 @@ BOOST_PYTHON_MODULE(ctimbpy) {
 
   // py::register_exception_translator<std::exception>(&bs::TranslateStdException);
 
-  py::class_<std::vector<double> >("PyVec")
-    .def(py::vector_indexing_suite<std::vector<double> >());
+  // py::class_<std::vector<double> >("PyVec")
+  //   .def(py::vector_indexing_suite<std::vector<double> >());
 
 
   py::class_<Var>("Var")
@@ -172,7 +176,9 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     .def_readonly("status", &PyOptResult::status)
     .def_readonly("x", &PyOptResult::py_x)
     .def_readonly("cost", &PyOptResult::cost)
-    .def_readonly("cost_over_iters", &PyOptResult::cost_over_iters)
+    .def_readonly("cost_detail", &PyOptResult::py_cost_detail)
+    .def_readonly("cost_over_iters", &PyOptResult::py_cost_over_iters)
+    .def_readonly("x_over_iters", &PyOptResult::py_x_over_iters)
     ;
 
   py::class_<OptParams>("OptParams", py::no_init)
@@ -182,6 +188,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     .def_readwrite("approx_improve_rel_tol", &OptParams::approx_improve_rel_tol)
     .def_readwrite("max_iter", &OptParams::max_iter)
     .def_readwrite("check_linearizations", &OptParams::check_linearizations)
+    .def_readwrite("keep_results_over_iterations", &OptParams::keep_results_over_iterations)
     ;
 
   py::class_<PyOptimizer, PyOptimizerPtr>("Optimizer")

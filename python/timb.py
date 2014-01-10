@@ -4,45 +4,53 @@ import numpy as np
 from collections import namedtuple
 
 class Coeffs(object):
-  def __init__(self):
-    self.flow_norm
-    self.flow_rigidity
-    self.observation
-    self.agreement
-
-
+  flow_norm = 1e-2
+  flow_rigidity = 1.
+  observation = 1.
+  agreement = 1.
 
 Result = namedtuple('Result', ['phi', 'u_x', 'u_y'])
 
-
-
-struct TrackingProblemResult {
-  DoubleField phi;
-  DoubleField u_x, u_y;
-  DoubleField next_phi, next_omega;
-  OptResultPtr opt_result;
-  TrackingProblemResult(const GridParams& gp) : phi(gp), u_x(gp), u_y(gp), next_phi(gp), next_omega(gp) { }
-};
-typedef boost::shared_ptr<TrackingProblemResult> TrackingProblemResultPtr;
-
-
-
 class State(object):
-  def __init__(self, phi, u_x, u_y):
-    self.phi, self.u_x, self.u_y = phi, u_x, u_y
+  def __init__(self, gp, phi, u_x, u_y):
+    self.gp, self.phi, self.u_x, self.u_y = gp, phi, u_x, u_y
 
   @staticmethod
-  def FromPacked(x):
+  def FromPacked(gp, x):
     n = gp.nx * gp.ny # num grid points
     x = x.squeeze()
     assert x.size == 3*n
     phi = x[:n].reshape((gp.nx, gp.ny))
     u_x = x[n:2*n].reshape((gp.nx, gp.ny))
     u_y = x[2*n:].reshape((gp.nx, gp.ny))
-    return State(phi, u_x, u_y)
+    return State(gp, phi, u_x, u_y)
 
   def pack(self):
     return np.r_[self.phi.ravel(), self.u_x.ravel(), self.u_y.ravel()]
+
+def plot_state(state):
+  import matplotlib
+  import matplotlib.pyplot as plt
+  plt.clf()
+  matplotlib.rcParams.update({'font.size': 8})
+
+  TSDF_TRUNC = 10.
+  plt.subplot(121)
+  plt.title('phi')
+  plt.axis('off')
+  plt.imshow(state.phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+
+  plt.subplot(122, aspect='equal')
+  plt.title('u')
+  def plot_flow(u_x, u_y):
+    assert u_x.shape == u_y.shape
+    x = np.linspace(state.gp.xmin, state.gp.xmax, state.gp.nx)
+    y = np.linspace(state.gp.ymin, state.gp.ymax, state.gp.ny)
+    Y, X = np.meshgrid(x, y)
+    plt.quiver(X, Y, u_x, u_y, angles='xy', scale_units='xy', scale=1.)
+  plot_flow(state.u_x, state.u_y)
+
+  plt.show()
 
 
 class Tracker(object):
@@ -50,9 +58,9 @@ class Tracker(object):
     self.gp = gp
 
     self.opt = Optimizer()
-    self.phi_vars = make_var_field(opt, 'phi', self.gp)
-    self.u_x_vars = make_var_field(opt, 'u_x', self.gp)
-    self.u_y_vars = make_var_field(opt, 'u_y', self.gp)
+    self.phi_vars = make_var_field(self.opt, 'phi', self.gp)
+    self.u_x_vars = make_var_field(self.opt, 'u_x', self.gp)
+    self.u_y_vars = make_var_field(self.opt, 'u_y', self.gp)
 
     self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
     self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
@@ -64,7 +72,14 @@ class Tracker(object):
     self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
 
   def optimize(self, init_state):
-    result = self.opt.optimize(init_state.pack())
+    opt_result = self.opt.optimize(init_state.pack())
+    # print list(opt_result.cost_over_iters)
+    # import matplotlib.pyplot as plt
+    # plt.plot(opt_result.cost_over_iters)
+    # plt.show()
+    result = State.FromPacked(self.gp, opt_result.x)
+    # print opt_result.x_over_iters
+    return result, opt_result
 
 
 

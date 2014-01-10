@@ -8,7 +8,6 @@
 #include "grid_numpy_utils.hpp"
 #include <boost/bind.hpp>
 
-vector<Var> g_all_vars; // TODO: remove
 void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
   vector<string> names;
   names.reserve(f.grid_params().nx * f.grid_params().ny);
@@ -24,10 +23,6 @@ void make_field_vars(const string& prefix, Optimizer& opt, VarField& f) {
     for (int j = 0; j < f.grid_params().ny; ++j) {
       f(i,j) = vars[k++];
     }
-  }
-
-  for (int i = 0; i < vars.size(); ++i) {
-    g_all_vars.push_back(vars[i]);
   }
 }
 

@@ -20,7 +20,8 @@ OptParams::OptParams() :
   grad_convergence_tol(1e-8),
   approx_improve_rel_tol(1e-8),
   max_iter(100),
-  check_linearizations(false)
+  check_linearizations(false),
+  keep_results_over_iterations(false)
 { }
 
 string OptParams::str() const {
@@ -81,6 +82,10 @@ struct OptimizerImpl {
     return n;
   }
 
+  int num_costs() const {
+    return m_costs.size();
+  }
+
   void add_vars(const StrVec& names, vector<Var>& out) {
     out.clear();
     for (int i = 0; i < names.size(); ++i) {
@@ -104,24 +109,24 @@ struct OptimizerImpl {
     m_callbacks.push_back(fn);
   }
 
-  // void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& quad_cost_vals, const VectorXd& new_cost_vals,
-  //                      double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
-  //   assert(m_costs.size() == quad_cost_vals.size() && m_costs.size() == new_cost_vals.size() && m_costs.size() == old_cost_vals.size());
+  void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& model_cost_vals, const VectorXd& new_cost_vals) {
+                       // double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
+    assert(m_costs.size() == model_cost_vals.size() && m_costs.size() == new_cost_vals.size() && m_costs.size() == old_cost_vals.size());
 
-  //   LOG_INFO("%15s | %10s | %10s | %10s | %10s", "", "oldexact", "dapprox", "dexact", "ratio");
-  //   LOG_INFO("%15s | %10s---%10s---%10s---%10s", "COSTS", "----------", "----------", "----------", "----------");
-  //   for (int i = 0; i < old_cost_vals.size(); ++i) {
-  //     double approx_improve = old_cost_vals[i] - quad_cost_vals[i];
-  //     double exact_improve = old_cost_vals[i] - new_cost_vals[i];
-  //     double ratio = exact_improve / approx_improve;
-  //     if (fabs(approx_improve) > 1e-8) {
-  //       LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, ratio);
-  //     } else {
-  //       LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10s", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, "  ------  ");
-  //     }
-  //   }
-  //   LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
-  // }
+    LOG_INFO("%15s | %10s | %10s | %10s | %10s", "", "oldexact", "dapprox", "dexact", "ratio");
+    LOG_INFO("%15s | %10s---%10s---%10s---%10s", "COSTS", "----------", "----------", "----------", "----------");
+    for (int i = 0; i < old_cost_vals.size(); ++i) {
+      double approx_improve = old_cost_vals[i] - model_cost_vals[i];
+      double exact_improve = old_cost_vals[i] - new_cost_vals[i];
+      double ratio = exact_improve / approx_improve;
+      if (fabs(approx_improve) > 1e-8) {
+        LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, ratio);
+      } else {
+        LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10s", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, "  ------  ");
+      }
+    }
+    // LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
+  }
 
   void numdiff_cost(CostFuncPtr cost, const VectorXd& x0, vector<AffExpr>& out_exprs) {
     VectorXd x = x0;
@@ -225,6 +230,19 @@ struct OptimizerImpl {
     fjac.makeCompressed();
   }
 
+  void update_result(OptResultPtr result, const VectorXd& fvec) {
+    result->cost = fvec.squaredNorm();
+
+    result->cost_detail.resize(num_costs());
+    int pos = 0;
+    for (int i = 0; i < num_costs(); ++i) {
+      int num_resid = m_costs[i]->num_residuals();
+      result->cost_detail(i) = fvec.segment(pos, num_resid).squaredNorm();
+      pos += num_resid;
+    }
+    assert(pos == num_residuals() && close(result->cost_detail.sum(), result->cost));
+  }
+
   OptResultPtr optimize(const VectorXd& start_x) {
     assert(start_x.size() == num_vars());
 
@@ -238,6 +256,8 @@ struct OptimizerImpl {
 
     bool converged = false;
     int iter = 0;
+
+    double min_scaling = 1e-5;
 
     double damping = 1e-5;
     double damping_increase_factor = 2.;
@@ -256,7 +276,6 @@ struct OptimizerImpl {
     // Temporary per-iteration data
     SparseMatrixT jtj(num_vars(), num_vars());
     SparseMatrixT lin_lhs(num_vars(), num_vars());
-    // SparseMatrixT eye(num_vars(), num_vars()); eye.setIdentity();
     VectorXd lin_rhs(num_vars());
     VectorXd delta_x(num_vars());
     VectorXd tmp_residuals(num_residuals());
@@ -273,17 +292,18 @@ struct OptimizerImpl {
       if (iter == 1) {
         eval_residuals(result->x, fvec); ++result->n_func_evals;
         eval_jacobian(result->x, fjac); ++result->n_jacobian_evals;
-        result->cost = fvec.squaredNorm();
-        result->cost_over_iters.push_back(result->cost);
+        update_result(result, fvec);
         x_changed = true;
 
         for (int i = 0; i < num_vars(); ++i) {
-          scaling.coeffRef(i,i) = fjac.col(i).norm();
+          scaling.coeffRef(i,i) = fmax(min_scaling, fjac.col(i).norm());
         }
         scaling.makeCompressed();
+        std::cout << "scaling: " << scaling.diagonal().transpose() << std::endl;
       }
 
       const double starting_cost = result->cost;
+      const VectorXd starting_cost_detail = result->cost_detail;
 
       for (auto& fn : m_callbacks) {
         fn(result->x);
@@ -346,11 +366,10 @@ struct OptimizerImpl {
           assert((tmp_residuals - fvec).isMuchSmallerThan(1e-10));
 #endif
           eval_jacobian(result->x, fjac); ++result->n_jacobian_evals;
-          result->cost = fvec.squaredNorm();
-          result->cost_over_iters.push_back(result->cost);
+          update_result(result, fvec);
           x_changed = true;
           for (int i = 0; i < num_vars(); ++i) {
-            scaling.coeffRef(i,i) = fmax(scaling.coeffRef(i,i), fjac.col(i).norm());
+            scaling.coeffRef(i,i) = fmax(min_scaling, fmax(scaling.coeffRef(i,i), fjac.col(i).norm()));
           }
 
           damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
@@ -363,6 +382,17 @@ struct OptimizerImpl {
           expanded_trust_region = false;
         }
 
+
+  //       print_cost_info();
+
+        result->cost_over_iters.push_back(result->cost);
+        if (m_params.keep_results_over_iterations) {
+          result->x_over_iters.push_back(result->x);
+        }
+
+        print_cost_info(starting_cost_detail, result->cost_detail, result->cost_detail);
+  // void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& model_cost_vals, const VectorXd& new_cost_vals,
+                       // double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
         LOG_INFO(
           "% 4d: f:% 8e d:% 3.2e g:% 3.2e h:% 3.2e rho:% 3.2e mu:% 3.2e (%c) li:% 3d it:% 3.2e tt:% 3.2e",
           iter,
