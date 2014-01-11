@@ -20,6 +20,21 @@ def state_to_pixel_depth(state):
         break
   return depth
 
+def state_to_visibility_mask(state, depth=None):
+  # make mask where visible surface is zero
+  if depth is None:
+    depth = state_to_pixel_depth(state)
+  mask = np.ones_like(state, dtype=float)
+  for i in range(state.shape[0]):
+    d = depth[i]
+    if d != np.inf:
+      # if the ray hits something, make a pixel zero if any neighbor is zero
+      for j in range(int(d)):
+        # TODO: make sure i,j are in bounds
+        if state[i,j] or state[i+1,j] or state[i-1,j] or state[i,j+1] or state[i,j-1]:
+          mask[i,j] = 0.
+  return mask
+
 def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
   assert mode in ['accurate', 'projective']
 
@@ -30,15 +45,7 @@ def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
 
   if mode == 'accurate':
     # make mask where visible surface is zero
-    mask = np.ones_like(state)
-    for i in range(state.shape[0]):
-      d = depth[i]
-      if d != np.inf:
-        # if the ray hits something, make a pixel zero if any neighbor is zero
-        for j in range(int(d)):
-          # TODO: make sure i,j are in bounds
-          if state[i,j] or state[i+1,j] or state[i-1,j] or state[i,j+1] or state[i,j-1]:
-            mask[i,j] = 0.
+    mask = state_to_visibility_mask(state, depth)
     # fill to make a SDF
     import skfmm
     sdf = skfmm.distance(mask)

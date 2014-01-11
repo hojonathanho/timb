@@ -165,10 +165,13 @@ struct OptimizerImpl {
     for (int i = 0; i < m_costs.size(); ++i) {
       CostFuncPtr cost = m_costs[i];
       double coeff = m_cost_coeffs[i];
-
       auto seg = fvec.segment(pos, cost->num_residuals());
-      cost->eval(x, seg);
-      seg *= sqrt(coeff);
+      if (coeff != 0.) {
+        cost->eval(x, seg);
+        seg *= sqrt(coeff);
+      } else {
+        seg.setZero();
+      }
 
       pos += cost->num_residuals();
     }
@@ -194,12 +197,13 @@ struct OptimizerImpl {
           triplets, cost->num_residuals(), pos, sqrt(coeff),
           cost->is_linear(), m_params.check_linearizations
         ));
-        cost->linearize(x, *lin);
+        if (coeff != 0.) {
+          cost->linearize(x, *lin);
+        }
 
         if (cost->is_linear()) {
           m_cost2lin[cost] = lin;
         }
-
       // If the cost is linear and the jacobian has been computed, then use that
       } else {
         lin = m_cost2lin[cost];

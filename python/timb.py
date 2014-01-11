@@ -32,7 +32,7 @@ class State(object):
 
 
 class Tracker(object):
-  def __init__(self, grid_params):
+  def __init__(self, grid_params, use_zero_crossing_obs=True):
     self.gp = grid_params
 
     self.opt = Optimizer()
@@ -42,7 +42,10 @@ class Tracker(object):
 
     self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
     self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
-    self.observation_cost = ObservationCost(self.phi_vars)
+    if use_zero_crossing_obs:
+      self.observation_cost = ObservationZeroCrossingCost(self.phi_vars)
+    else:
+      self.observation_cost = ObservationCost(self.phi_vars)
     self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.flow_norm_cost, Coeffs.flow_norm)
     self.opt.add_cost(self.flow_rigidity_cost, Coeffs.flow_rigidity)

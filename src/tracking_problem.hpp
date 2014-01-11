@@ -172,6 +172,47 @@ struct ObservationCost : public CostFunc {
 };
 typedef boost::shared_ptr<ObservationCost> ObservationCostPtr;
 
+struct ObservationZeroCrossingCost : public CostFunc {
+  const GridParams m_gp;
+  const VarField m_phi; // next timestep TSDF variables
+  DoubleField m_phi_vals; // current iterate values of TSDF
+  MatrixX2d m_zero_points; // points where phi should be zero
+
+  ObservationZeroCrossingCost(const VarField& phi)
+    : m_gp(phi.grid_params()),
+      m_phi(phi), m_phi_vals(m_gp)
+  { }
+
+  void set_zero_points(const MatrixX2d& zero_points) {
+    m_zero_points = zero_points;
+  }
+
+  void py_set_zero_points(py::object py_zero_points) {
+    util::fromNdarray(py_zero_points, m_zero_points);
+    std::cout << "got " << m_zero_points.rows() << " points" << std::endl;
+  }
+
+  string name() const { return "obs_zero_crossing"; }
+  int num_residuals() const { return m_zero_points.rows(); }
+  bool is_linear() const { return true; }
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    assert(m_zero_points.rows() > 0);
+    extract_field_values(x, m_phi, m_phi_vals);
+    for (int i = 0; i < m_zero_points.rows(); ++i) {
+      out(i) = m_phi_vals.eval_xy(m_zero_points(i,0), m_zero_points(i,1));
+    }
+  }
+
+  void linearize(const VectorXd&, CostFuncLinearization& lin) {
+    assert(m_zero_points.rows() > 0);
+    for (int i = 0; i < m_zero_points.rows(); ++i) {
+      lin.set_by_expr(i, m_phi.eval_xy(m_zero_points(i,0), m_zero_points(i,1)));
+    }
+  }
+};
+typedef boost::shared_ptr<ObservationZeroCrossingCost> ObservationZeroCrossingCostPtr;
+
 struct AgreementCost : public CostFunc {
   const GridParams m_gp;
   VarField m_phi, m_u_x, m_u_y;

@@ -151,6 +151,9 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<ObservationCost, ObservationCostPtr, py::bases<CostFunc> >("ObservationCost", py::init<const VarField&>())
     .def("set_observation", &ObservationCost::py_set_observation)
     ;
+  py::class_<ObservationZeroCrossingCost, ObservationZeroCrossingCostPtr, py::bases<CostFunc> >("ObservationZeroCrossingCost", py::init<const VarField&>())
+    .def("set_zero_points", &ObservationZeroCrossingCost::py_set_zero_points)
+    ;
   py::class_<AgreementCost, AgreementCostPtr, py::bases<CostFunc> >("AgreementCost", py::init<const VarField&, const VarField&, const VarField&>())
     .def("set_prev_phi_and_weights", &AgreementCost::py_set_prev_phi_and_weights)
     ;
