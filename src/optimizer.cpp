@@ -64,11 +64,11 @@ struct OptimizerImpl {
 
   vector<CostFuncPtr> m_costs;
   vector<double> m_cost_coeffs;
-  map<CostFuncPtr, int> m_cost2idx;
+  map<CostFunc*, int> m_cost2idx;
 
   // store cost linearizations for linear costs only
   // (nonlinear ones are recomputed at each step)
-  map<CostFuncPtr, CostFuncLinearizationPtr> m_cost2lin;
+  map<CostFunc*, CostFuncLinearizationPtr> m_cost2lin;
 
   vector<Optimizer::Callback> m_callbacks;
 
@@ -97,12 +97,12 @@ struct OptimizerImpl {
     FAIL_IF_FALSE(coeff >= 0);
     m_costs.push_back(cost);
     m_cost_coeffs.push_back(coeff);
-    m_cost2idx[cost] = m_costs.size() - 1;
+    m_cost2idx[cost.get()] = m_costs.size() - 1;
   }
   void set_cost_coeff(CostFuncPtr cost, double coeff) {
-    assert(m_cost2idx.find(cost) != m_cost2idx.end());
+    FAIL_IF_FALSE(m_cost2idx.find(cost.get()) != m_cost2idx.end());
     FAIL_IF_FALSE(coeff >= 0);
-    m_cost_coeffs[m_cost2idx[cost]] = coeff;
+    m_cost_coeffs[m_cost2idx[cost.get()]] = coeff;
   }
 
   void add_callback(Optimizer::Callback fn) {
@@ -191,7 +191,7 @@ struct OptimizerImpl {
       // or if the cost is nonlinear, then compute the jacobian
       // and cache if it's linear
       CostFuncLinearizationPtr lin;
-      if ((cost->is_linear() && m_cost2lin.find(cost) == m_cost2lin.end()) || !cost->is_linear()) {
+      if ((cost->is_linear() && m_cost2lin.find(cost.get()) == m_cost2lin.end()) || !cost->is_linear()) {
         double coeff = m_cost_coeffs[i];
         lin.reset(new CostFuncLinearization(
           triplets, cost->num_residuals(), pos, sqrt(coeff),
@@ -202,11 +202,11 @@ struct OptimizerImpl {
         }
 
         if (cost->is_linear()) {
-          m_cost2lin[cost] = lin;
+          m_cost2lin[cost.get()] = lin;
         }
       // If the cost is linear and the jacobian has been computed, then use that
       } else {
-        lin = m_cost2lin[cost];
+        lin = m_cost2lin[cost.get()];
         triplets.reserve(triplets.size() + lin->stored_triplets().size());
         triplets.insert(triplets.end(), lin->stored_triplets().begin(), lin->stored_triplets().end());
       }

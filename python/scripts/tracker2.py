@@ -280,17 +280,20 @@ def test_image():
     WORLD_MAX = (SIZE-1., SIZE-1.)
     gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
     timb.Coeffs.flow_norm = 1e-6
-    timb.Coeffs.flow_rigidity = 1e2
+    timb.Coeffs.flow_rigidity = 1.
     timb.Coeffs.observation = 1.
     timb.Coeffs.prior = 1.
     tracker = timb.Tracker(gp)
     tracker.opt.params().check_linearizations = False
     tracker.opt.params().keep_results_over_iterations = True
     tracker.opt.params().max_iter = 15
-    tracker.opt.params().approx_improve_rel_tol = 1e-4
-    # tracker.observation_cost.set_observation(tsdf, obs_weights)
-    zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
-    tracker.observation_cost.set_zero_points(zero_points)
+    tracker.opt.params().approx_improve_rel_tol = 1e-8
+    # if angle == 0:
+    if True:
+      tracker.set_observation(tsdf, obs_weights)
+    # else:
+    #   zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
+    #   tracker.set_observation_zc(zero_points)
     tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
     # initialization: previous phi, zero flow
     init_u = np.zeros(init_phi.shape + (2,))

@@ -32,7 +32,7 @@ class State(object):
 
 
 class Tracker(object):
-  def __init__(self, grid_params, use_zero_crossing_obs=True):
+  def __init__(self, grid_params):
     self.gp = grid_params
 
     self.opt = Optimizer()
@@ -41,34 +41,37 @@ class Tracker(object):
     self.u_y_vars = make_var_field(self.opt, 'u_y', self.gp)
 
     self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
-    self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
-    if use_zero_crossing_obs:
-      self.observation_cost = ObservationZeroCrossingCost(self.phi_vars)
-    else:
-      self.observation_cost = ObservationCost(self.phi_vars)
-    self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.flow_norm_cost, Coeffs.flow_norm)
+
+    self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.flow_rigidity_cost, Coeffs.flow_rigidity)
+
+    self.observation_zc_cost = ObservationZeroCrossingCost(self.phi_vars)
+    self.opt.add_cost(self.observation_zc_cost, 0)
+
+    self.observation_cost = ObservationCost(self.phi_vars)
     self.opt.add_cost(self.observation_cost, Coeffs.observation)
+
+    self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
+
+  def set_prev_phi_and_weights(self, prev_phi, weights):
+    self.agreement_cost.set_prev_phi_and_weights(prev_phi, weights)
+
+  def set_observation(self, obs, weights):
+    self.observation_cost.set_observation(obs, weights)
+    self.opt.set_cost_coeff(self.observation_cost, Coeffs.observation)
+    self.opt.set_cost_coeff(self.observation_zc_cost, 0)
+
+  def set_observation_zc(self, pts):
+    self.observation_zc_cost.set_zero_points(pts)
+    self.opt.set_cost_coeff(self.observation_zc_cost, Coeffs.observation)
+    self.opt.set_cost_coeff(self.observation_cost, 0)
 
   def optimize(self, init_state):
     opt_result = self.opt.optimize(init_state.pack())
-
-    # import matplotlib.pyplot as plt
-    # plt.clf()
-    # plt.plot(opt_result.cost_over_iters)
-    # plt.show()
-
     result = State.FromPacked(self.gp, opt_result.x)
-    # print opt_result.x_over_iters
     return result, opt_result
-
-
-  # self.observation_cost.set_observation
-  # self.agreement_cost.set_prev_phi_and_weights
-
-
 
 
 # Utility functions
