@@ -39,15 +39,15 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
   // -- phi, dx, flag, and speed
   // -- and the input error checking should be done
 
-  PyObject *pphi, *pdx, *pflag, *pspeed, *pext_mask;
+  PyObject *pphi, *pdx, *pflag, *pspeed, *pext_mask, *pignore_mask;
   int       self_test, mode, order;
-  PyArrayObject *phi, *dx, *flag, *speed, *distance, *f_ext, *ext_mask;
+  PyArrayObject *phi, *dx, *flag, *speed, *distance, *f_ext, *ext_mask, *ignore_mask = NULL;
   distance = 0;
   f_ext    = 0;
   speed    = 0;
   ext_mask = 0;
 
-  if (!PyArg_ParseTuple(args, "OOOOOiii", &pphi, &pdx, &pflag,
+  if (!PyArg_ParseTuple(args, "OOOOOOiii", &pphi, &pdx, &pflag, &pignore_mask,
                         &pspeed, &pext_mask, &self_test, &mode, &order))
   {
     return NULL;
@@ -103,6 +103,19 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
     return NULL;
   }
 
+  ignore_mask = (PyArrayObject *)PyArray_FROMANY(pignore_mask, PyArray_LONG, 1,
+                                                 10, NPY_IN_ARRAY);
+  if (ignore_mask && mode != DISTANCE) {
+    // PyErr_SetString(PyExc_ValueError,
+    //                 "ignore_mask must be a 1D to 12-D array of integers");
+    PyErr_SetString(PyExc_ValueError,
+                    "ignore_mask supported for DISTANCE mode only");
+    Py_XDECREF(phi);
+    Py_XDECREF(dx);
+    Py_XDECREF(flag);
+    return NULL;
+  }
+
   if (mode == TRAVEL_TIME || mode == EXTENSION_VELOCITY)
   {
     {
@@ -115,6 +128,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
         Py_XDECREF(phi);
         Py_XDECREF(dx);
         Py_XDECREF(flag);
+        if (ignore_mask) Py_XDECREF(ignore_mask);
         return NULL;
       }
 
@@ -125,6 +139,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
         Py_XDECREF(phi);
         Py_XDECREF(dx);
         Py_XDECREF(flag);
+        if (ignore_mask) Py_XDECREF(ignore_mask);
         Py_XDECREF(speed);
         return NULL;
       }
@@ -137,6 +152,18 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
     Py_XDECREF(phi);
     Py_XDECREF(dx);
     Py_XDECREF(flag);
+    if (ignore_mask) Py_XDECREF(ignore_mask);
+    Py_XDECREF(speed);
+    return NULL;
+  }
+
+  if (ignore_mask && !PyArray_SAMESHAPE(phi,ignore_mask))
+  {
+    PyErr_SetString(PyExc_ValueError, "ignore_mask must be of same shape as phi");
+    Py_XDECREF(phi);
+    Py_XDECREF(dx);
+    Py_XDECREF(flag);
+    Py_XDECREF(ignore_mask);
     Py_XDECREF(speed);
     return NULL;
   }
@@ -150,6 +177,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
       Py_XDECREF(phi);
       Py_XDECREF(dx);
       Py_XDECREF(flag);
+      if (ignore_mask) Py_XDECREF(ignore_mask);
       Py_XDECREF(speed);
       return NULL;
     }
@@ -161,6 +189,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
     Py_XDECREF(phi);
     Py_XDECREF(dx);
     Py_XDECREF(flag);
+    if (ignore_mask) Py_XDECREF(ignore_mask);
     Py_XDECREF(speed);
     return NULL;
   }
@@ -193,6 +222,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
         Py_XDECREF(phi);
         Py_XDECREF(dx);
         Py_XDECREF(flag);
+        if (ignore_mask) Py_XDECREF(ignore_mask);
         Py_XDECREF(speed);
         return NULL;
       }
@@ -203,6 +233,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
   double * local_phi        = (double *) PyArray_DATA(phi);
   double * local_dx         = (double *) PyArray_DATA(dx);
   long   * local_flag       = (long *)   PyArray_DATA(flag);
+  long * local_ignore_mask  = ignore_mask ? (long *) PyArray_DATA(ignore_mask) : NULL;
   long    * local_ext_mask   = 0;
   if (ext_mask) local_ext_mask = (long *) PyArray_DATA(ext_mask);
   double * local_speed      = 0;
@@ -219,6 +250,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
         local_phi,
         local_dx,
         local_flag,
+        local_ignore_mask,
         local_distance,
         PyArray_NDIM(phi),
         shape,
@@ -267,6 +299,7 @@ static PyObject *distance_method(PyObject *self, PyObject *args)
 
   Py_DECREF(phi);
   Py_DECREF(flag);
+  if (ignore_mask) Py_DECREF(ignore_mask);
   Py_DECREF(dx);
   Py_XDECREF(speed);
   Py_XDECREF(ext_mask);

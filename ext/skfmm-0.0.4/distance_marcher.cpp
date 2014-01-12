@@ -109,7 +109,7 @@ void distanceMarcher::initalizeFrozen()
   //  and mark them as frozen
   for (int i=0; i<size_; i++)
   {
-    if (flag_[i] != Mask && phi_[i]==0.0)
+    if (flag_[i] != Mask && phi_[i]==0.0 && (!ignore_mask_ || !ignore_mask_[i]))
     {
       flag_[i]=Frozen;
       distance_[i]=0.0;
@@ -130,6 +130,8 @@ void distanceMarcher::initalizeFrozen()
       for (int j=-1; j<2; j+=2) // each direction
       {
         int naddr = _getN(i,dim,j,Mask);
+        if (ignore_mask_ && (ignore_mask_[i] || ignore_mask_[naddr]))
+          continue;
         if (naddr!=-1 && phi_[i] * phi_[naddr]<0)
         {
           // this cell and neighbor span the zero level set.

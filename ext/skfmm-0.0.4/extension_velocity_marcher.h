@@ -10,7 +10,7 @@ public:
                            bool self_test,   int order, long *ext_mask,
                            double *speed,
                            double *f_ext) :
-  distanceMarcher(phi, dx, flag, distance, ndim, shape, self_test, order),
+  distanceMarcher(phi, dx, flag, NULL, distance, ndim, shape, self_test, order),
   speed_(speed), f_ext_(f_ext), ext_mask_(ext_mask) { }
   virtual ~extensionVelocityMarcher() { }
 

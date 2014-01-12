@@ -42,7 +42,7 @@ def post_process_result(result):
     return result
 
 
-def distance(phi, dx=1.0, self_test=False, order=2):
+def distance(phi, dx=1.0, self_test=False, order=2, ignore_mask=None):
     """
     Return the distance from the zero contour of the array phi.
 
@@ -72,9 +72,11 @@ def distance(phi, dx=1.0, self_test=False, order=2):
         of phi to each point in the array.
     """
     phi, dx, flag, ext_mask = pre_process_args(phi, dx)
-    d = cFastMarcher(phi, dx, flag, None, ext_mask,
+    d = cFastMarcher(phi, dx, flag, ignore_mask, None, ext_mask,
                      int(self_test), DISTANCE, order)
     d = post_process_result(d)
+    if ignore_mask is not None:
+        return distance(d, dx, self_test, order)
     return d
 
 
@@ -115,7 +117,7 @@ def travel_time(phi, speed, dx=1.0, self_test=False, order=2):
         than or equal to zero the return value will be a masked array.
     """
     phi, dx, flag, ext_mask = pre_process_args(phi, dx)
-    t = cFastMarcher(phi, dx, flag, speed, ext_mask,
+    t = cFastMarcher(phi, dx, flag, None, speed, ext_mask,
                      int(self_test), TRAVEL_TIME, order)
     t = post_process_result(t)
     return t
@@ -164,7 +166,7 @@ def extension_velocities(phi, speed, dx=1.0, self_test=False, order=2, ext_mask=
     """
     phi, dx, flag, ext_mask = pre_process_args(phi, dx, ext_mask)
 
-    distance, f_ext = cFastMarcher(phi, dx, flag, speed, ext_mask,
+    distance, f_ext = cFastMarcher(phi, dx, flag, None, speed, ext_mask,
                                    int(self_test), EXTENSION_VELOCITY, order)
     distance = post_process_result(distance)
     f_ext    = post_process_result(f_ext)
