@@ -2,6 +2,7 @@ from ctimbpy import *
 
 import numpy as np
 from collections import namedtuple
+import observation
 
 class Coeffs(object):
   flow_norm = 1e-2
@@ -72,6 +73,12 @@ class Tracker(object):
     opt_result = self.opt.optimize(init_state.pack())
     result = State.FromPacked(self.gp, opt_result.x)
     return result, opt_result
+
+
+def reintegrate(phi, ignore_mask):
+  from timb_skfmm import distance
+  d = distance(phi, ignore_mask=ignore_mask, order=1)
+  return np.clip(d, -observation.TRUNC_DIST, observation.TRUNC_DIST)
 
 
 # Utility functions

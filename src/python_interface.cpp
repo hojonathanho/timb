@@ -65,6 +65,92 @@ static py::object py_apply_flow(const GridParams& gp, py::object py_phi, py::obj
   return to_numpy(flowed_phi);
 }
 
+#include <boost/multi_array.hpp>
+#include <boost/heap/fibonacci_heap.hpp>
+static py::object py_march_from_zero_crossing(py::object py_phi, py::object py_ignore_mask) {
+  MatrixXd phi;
+  util::fromNdarray(py_phi, phi);
+
+  bool use_ignore_mask = py_ignore_mask != py::object();
+  Eigen::MatrixXi ignore_mask;
+  if (use_ignore_mask) {
+    util::fromNdarray(py_ignore_mask, ignore_mask);
+  }
+
+  MatrixXd out(phi.rows(), phi.cols());
+  out.fill(std::numeric_limits<double>::max());
+
+  struct PointAndDist {
+    int i, j;
+    double d;
+  };
+  struct PointAndDistCmp {
+    bool operator()(const PointAndDist& a, const PointAndDist& b) const {
+      return a.d > b.d;
+    }
+  };
+  typedef boost::heap::fibonacci_heap<PointAndDist, boost::heap::compare<PointAndDistCmp> > Heap;
+  Heap heap;
+
+  boost::multi_array<Heap::handle_type, 2> handles(boost::extents[phi.rows()][phi.cols()]);
+
+#define IN_RANGE(I,J) (0 <= (I) && (I) < phi.rows() && 0 <= (J) && (J) < phi.cols())
+  // find zero crossing of phi
+  for (int i = 0; i < phi.rows(); ++i) {
+    for (int j = 0; j < phi.cols(); ++j) {
+      if (use_ignore_mask && ignore_mask(i,j)) {
+        continue;
+      }
+
+      if (phi(i,j) == 0.) {
+        out(i,j) = 0.;
+      } else {
+        std::pair<int,int> neighbors[4] = {
+          std::make_pair(i-1, j),
+          std::make_pair(i+1, j),
+          std::make_pair(i, j-1),
+          std::make_pair(i, j+1)
+        };
+        for (const auto& nbd : neighbors) {
+          if (!IN_RANGE(nbd.first, nbd.second)) continue;
+          if (use_ignore_mask && ignore_mask(nbd.first, nbd.second)) continue;
+          if (phi(nbd.first,nbd.second)*phi(i,j) >= 0) continue;
+          double dist_to_zero = phi(i,j) / (phi(i,j) - phi(nbd.first,nbd.second));
+          out(i,j) = std::min(out(i,j), dist_to_zero);
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i < phi.rows(); ++i) {
+    for (int j = 0; j < phi.cols(); ++j) {
+      handles[i][j] = heap.push({i, j, out(i,j)});
+    }
+  }
+
+  while (!heap.empty()) {
+    PointAndDist top = heap.top(); heap.pop();
+    const int i = top.i, j = top.j;
+    std::pair<int,int> neighbors[4] = {
+      std::make_pair(i-1, j),
+      std::make_pair(i+1, j),
+      std::make_pair(i, j-1),
+      std::make_pair(i, j+1)
+    };
+    for (const auto& nbd : neighbors) {
+      if (!IN_RANGE(nbd.first, nbd.second)) continue;
+      double new_d = out(i,j) + 1.;
+      if (new_d < out(nbd.first,nbd.second)) {
+        out(nbd.first,nbd.second) = new_d;
+        heap.update(handles[nbd.first][nbd.second], {nbd.first,nbd.second,new_d});
+      }
+    }
+  }
+
+#undef IN_RANGE
+  return util::toNdarray(out);
+}
+
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
   ExampleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
@@ -144,6 +230,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<VarField>("VarField", py::no_init);
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
+  py::def("march_from_zero_crossing", &py_march_from_zero_crossing);
 
   py::class_<ExampleCost, ExampleCostPtr, py::bases<CostFunc> >("ExampleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());

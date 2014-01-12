@@ -18,20 +18,6 @@ def print_result(r):
   # print 'next_omega'
   # print r.next_omega
 
-# def smooth(phi):
-#   d = ndimage.morphology.distance_transform_edt(phi)
-#   d = np.where(d > observation.TRUNC_DIST, observation.TRUNC_DIST, d)
-#   d = np.where(d < -observation.TRUNC_DIST, -observation.TRUNC_DIST, d)
-#   # d /= abs(d).max()
-#   return d
-def smooth(phi):
-  import skfmm
-  d = skfmm.distance(phi)
-  # d[phi < 0] *= -1
-  return np.clip(d, -observation.TRUNC_DIST, observation.TRUNC_DIST)
-  # d /= abs(d).max()
-  return d
-
 def test1():
   SIZE = 5
   WORLD_MIN = (0., 0.)
@@ -185,7 +171,7 @@ def compute_obs_weight(obs_sdf, weight_max):
   # return np.where(a < trunc_val, (weight_max/trunc_val)*(trunc_val-a), 0.)
 
   # linear weight (b) in Bylow et al 2013
-  epsilon, delta = 5, 10
+  epsilon, delta = 5, 9
   assert delta > epsilon
   w = np.where(obs_sdf >= -epsilon, weight_max, obs_sdf)
   w = np.where((obs_sdf <= -epsilon) & (obs_sdf >= -delta), (weight_max/(delta-epsilon))*(obs_sdf + delta), w)
@@ -263,13 +249,11 @@ def test_image():
     if angle == 0: obs_weights *= FIRST_OBS_EXTRA_WEIGHT
     plt.imshow(to_img(obs_weights), cmap='binary', vmin=0, vmax=OBS_PEAK_WEIGHT*10).set_interpolation('nearest')
 
-    # if angle != 0: init_phi = smooth(init_phi)
+    # if angle != 0: init_phi = timb.reintegrate(init_phi)
     plt.subplot(254)
     plt.title('Prior TSDF')
     plt.axis('off')
-    ZZ = init_phi.copy()
-    # ZZ[init_omega > .5] = TSDF_TRUNC
-    plt.imshow(to_img(ZZ), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(to_img(init_phi), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
     plt.subplot(255)
     plt.title('Prior weight')
     plt.axis('off')
@@ -288,12 +272,12 @@ def test_image():
     tracker.opt.params().keep_results_over_iterations = True
     tracker.opt.params().max_iter = 15
     tracker.opt.params().approx_improve_rel_tol = 1e-8
-    # if angle == 0:
-    if True:
+    if angle == 0:
+    # if True:
       tracker.set_observation(tsdf, obs_weights)
-    # else:
-    #   zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
-    #   tracker.set_observation_zc(zero_points)
+    else:
+      zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
+      tracker.set_observation_zc(zero_points)
     tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
     # initialization: previous phi, zero flow
     init_u = np.zeros(init_phi.shape + (2,))
@@ -340,9 +324,12 @@ def test_image():
     # # plt.imshow(next_omega > .5, vmin=0, vmax=1, cmap='binary').set_interpolation('nearest')
     # plt.imshow(np.zeros_like(tsdf), vmin=0, vmax=1, cmap='binary').set_interpolation('nearest')
 
-    # plt.subplot(2,5,10)
-    # plt.axis('off')
-    # plt.imshow(to_img(smooth(result.phi)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.subplot(2,5,10)
+    plt.axis('off')
+    plt.imshow(to_img(timb.reintegrate(result.phi, next_omega < .1)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(to_img(timb.march_from_zero_crossing(result.phi, next_omega < .1)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+
+    # plt.imshow(to_img(np.where(next_omega > .1, result.phi, -TSDF_TRUNC)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
 
     plt.show()

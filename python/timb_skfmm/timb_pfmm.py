@@ -75,8 +75,8 @@ def distance(phi, dx=1.0, self_test=False, order=2, ignore_mask=None):
     d = cFastMarcher(phi, dx, flag, ignore_mask, None, ext_mask,
                      int(self_test), DISTANCE, order)
     d = post_process_result(d)
-    if ignore_mask is not None:
-        return distance(d, dx, self_test, order)
+    # if ignore_mask is not None:
+    #     return distance(d, dx, self_test, order)
     return d
 
 
