@@ -1,6 +1,6 @@
 #include "distance_marcher.h"
 #include "math.h"
-
+#include <stdio.h>
 double distanceMarcher::updatePointOrderOne(int i)
 {
   double a,b,c;
@@ -12,7 +12,7 @@ double distanceMarcher::updatePointOrderOne(int i)
     for (int j=-1; j<2; j+=2) // each direction
     {
       naddr = _getN(i,dim,j,Mask);
-      if (naddr!=-1 && flag_[naddr]==Frozen)
+      if (naddr!=-1 && flag_[naddr]==Frozen)// && (!ignore_mask_ || !ignore_mask_[naddr]))
       {
         if (distance_[naddr]<value)
         {
@@ -22,6 +22,7 @@ double distanceMarcher::updatePointOrderOne(int i)
     }
     if (value<maxDouble)
     {
+      // printf("yay, %f, %f\n", value, maxDouble);
       a+=idx2_[dim];
       b-=idx2_[dim]*2*value;
       c+=idx2_[dim]*pow(value,2);
@@ -47,7 +48,7 @@ double distanceMarcher::updatePointOrderTwo(int i)
     for (int j=-1; j<2; j+=2) // each direction
     {
       naddr = _getN(i,dim,j,Mask);
-      if (naddr!=-1 && flag_[naddr]==Frozen)
+      if (naddr!=-1 && flag_[naddr]==Frozen)// && (!ignore_mask_ || !ignore_mask_[naddr]))
       {
         if (distance_[naddr]<value1)
         {
@@ -56,7 +57,7 @@ double distanceMarcher::updatePointOrderTwo(int i)
           if (naddr2!=-1 &&
               flag_[naddr2]==Frozen &&
               ((distance_[naddr2]<=value1 && value1 >=0) ||
-               (distance_[naddr2]>=value1 && value1 <=0)))
+               (distance_[naddr2]>=value1 && value1 <=0)))// && (!ignore_mask_ || !ignore_mask_[naddr2]))
           {
             value2=distance_[naddr2];
           }

@@ -13,6 +13,7 @@ using std::string;
 
 using Eigen::VectorXd;
 using Eigen::MatrixXd;
+using Eigen::MatrixXi;
 using Eigen::MatrixX2d;
 
 typedef vector<string> StrVec;

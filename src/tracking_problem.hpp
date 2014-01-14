@@ -189,10 +189,9 @@ struct ObservationZeroCrossingCost : public CostFunc {
 
   void py_set_zero_points(py::object py_zero_points) {
     util::fromNdarray(py_zero_points, m_zero_points);
-    std::cout << "got " << m_zero_points.rows() << " points" << std::endl;
   }
 
-  string name() const { return "obs_zero_crossing"; }
+  string name() const { return "obs_zc"; }
   int num_residuals() const { return m_zero_points.rows(); }
   bool is_linear() const { return true; }
 

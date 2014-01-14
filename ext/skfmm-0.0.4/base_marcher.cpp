@@ -11,7 +11,7 @@ extern "C" {
 
 
 baseMarcher::baseMarcher(
-  double *phi,      double *dx,   long *flag,
+  double *phi,      double *dx,   long *flag, long *ignore_mask,
   double *distance, int     ndim, int *shape,
   bool self_test,   int order)
 {
@@ -20,6 +20,7 @@ baseMarcher::baseMarcher(
   phi_        =   phi;
   dx_         =   dx;
   flag_       =   flag;
+  ignore_mask_=   ignore_mask;
   distance_   =   distance;
   dim_        =   ndim;
   size_       =   1;

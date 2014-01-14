@@ -4,12 +4,18 @@ import numpy as np
 
 TRUNC_DIST = 10.
 
+
 def smooth_by_edt(phi):
   import skfmm
   d = skfmm.distance(phi)
   return np.clip(d, -TRUNC_DIST, TRUNC_DIST)
 
+
 def state_to_pixel_depth(state):
+  '''
+  State is a NxM boolean array. True indicates the presence of a surface.
+  Returns an array of length N that contains the distance from the y=0 axis to the surface.
+  '''
   depth = np.empty(state.shape[0])
   depth.fill(np.inf)
   for i in range(state.shape[0]):
@@ -19,6 +25,7 @@ def state_to_pixel_depth(state):
         depth[i] = j
         break
   return depth
+
 
 def state_to_visibility_mask(state, depth=None):
   # make mask where visible surface is zero
@@ -30,17 +37,21 @@ def state_to_visibility_mask(state, depth=None):
     if d != np.inf:
       # if the ray hits something, make a pixel zero if any neighbor is zero
       for j in range(int(d)):
-        # TODO: make sure i,j are in bounds
-        if state[i,j] or state[i+1,j] or state[i-1,j] or state[i,j+1] or state[i,j-1]:
-          mask[i,j] = 0.
+        try:
+          if state[i,j] or state[i+1,j] or state[i-1,j] or state[i,j+1] or state[i,j-1]:
+            mask[i,j] = 0
+        except IndexError:
+          pass
   return mask
 
+
 def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
+  '''
+  '''
+
   assert mode in ['accurate', 'projective']
 
   # observe from the left
-  scale = 1.
-
   depth = state_to_pixel_depth(state)
 
   if mode == 'accurate':
@@ -73,12 +84,48 @@ def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
   else:
     raise NotImplementedError
 
-  # scale and truncate
-  sdf *= scale
   tsdf = np.clip(sdf, -trunc, trunc)
 
-  if return_all: return tsdf, sdf
+  if return_all: return tsdf, sdf, depth
   return tsdf
+
+
+def depth_to_weights(depth, width=10):
+  '''
+  Computes weights for a depth image
+  '''
+
+  from scipy.ndimage.filters import sobel
+  sobel(depth, mode='constant', cval=np.inf)
+
+  has_measurement = (depth != np.inf).astype(int)
+  filt = np.ones(2*width + 1); filt /= filt.sum()
+  out = np.convolve(has_measurement, filt, 'same')
+  return np.clip(out - .5, 0, 1) * 2
+
+
+def compute_obs_weight(obs_sdf, depth, weight_max):
+  # a = abs(obs_tsdf)
+  # return np.where(a < trunc_val, (weight_max/trunc_val)*(trunc_val-a), 0.)
+
+  # linear weight (b) in Bylow et al 2013
+  # epsilon, delta = 5, 10
+  epsilon, delta = 0, 5
+  assert delta > epsilon
+  w = np.where(obs_sdf >= -epsilon, weight_max, obs_sdf)
+  w = np.where((obs_sdf <= -epsilon) & (obs_sdf >= -delta), (weight_max/(delta-epsilon))*(obs_sdf + delta), w)
+  w = np.where(obs_sdf < -delta, 0, w)
+  w = np.where(np.isfinite(obs_sdf), w, 0) # zero precision where we get inf/no depth measurement
+
+  dw = depth_to_weights(depth)
+  # print dw.max(), dw.min()
+  # import matplotlib; import matplotlib.pyplot as plt
+  # plt.plot(dw)
+  # plt.show()
+  w *= dw[:,None]
+
+  return w
+
 
 def test_simple():
   import matplotlib.pyplot as plt
@@ -104,6 +151,7 @@ def test_simple():
      [ 10.,  10.,  10.,  10.,  10.]]
   ))
 
+
 def test_load_img():
   import matplotlib.pyplot as plt
   from scipy import ndimage
@@ -125,6 +173,7 @@ def test_load_img():
   plt.imshow(tsdf, cmap='bwr').set_interpolation('nearest')
 
   plt.show()
+
 
 def test_rotate():
   from scipy import ndimage
@@ -150,25 +199,31 @@ def test_rotate():
     img = ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
 
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    plt.subplot(131)
+    plt.subplot(221)
     plt.title('State')
     plt.axis('off')
     plt.imshow(img, aspect=1).set_interpolation('nearest')
 
     TSDF_TRUNC = 10.
     tsdf, sdf = state_to_tsdf(state, return_all=True)
-    plt.subplot(132)
+    plt.subplot(222)
     plt.axis('off')
     plt.title('Accurate')
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
     tsdf, sdf = state_to_tsdf(state, mode='projective', return_all=True)
-    plt.subplot(133)
+    plt.subplot(223)
     plt.axis('off')
     plt.title('Projective')
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+
+    mask = state_to_visibility_mask(state)
+    plt.subplot(224)
+    plt.axis('off')
+    plt.title('Mask')
+    plt.imshow(mask)#.set_interpolation('nearest')
 
     plt.show()
 
@@ -177,6 +232,7 @@ def test_rotate():
   for i in range(75):
     angle = START_ANGLE + i*INCR_ANGLE
     run(angle)
+
 
 if __name__ == '__main__':
   # test_simple()

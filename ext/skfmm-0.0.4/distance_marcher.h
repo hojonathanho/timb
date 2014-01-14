@@ -8,7 +8,7 @@ public:
   distanceMarcher(double *phi,      double *dx, long *flag, long *ignore_mask,
                   double *distance, int ndim,   int *shape,
                   bool self_test,   int order) :
-    baseMarcher(phi, dx, flag, distance, ndim, shape, self_test, order), ignore_mask_(ignore_mask) { }
+    baseMarcher(phi, dx, flag, ignore_mask, distance, ndim, shape, self_test, order) { }
   virtual ~distanceMarcher() { }
 
 protected:
@@ -18,6 +18,4 @@ protected:
   virtual void             initalizeFrozen();
   virtual double           updatePointOrderOne(int i);
   virtual double           updatePointOrderTwo(int i);
-
-  long *ignore_mask_;
 };

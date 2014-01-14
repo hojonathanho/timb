@@ -18,7 +18,7 @@ extern "C" {
 class baseMarcher
 {
 public:
-  baseMarcher(double *phi,      double *dx,  long *flag,
+  baseMarcher(double *phi,      double *dx,  long *flag, long *ignore_mask,
               double *distance, int ndim,    int *shape,
               bool self_test,   int order);
 
@@ -76,6 +76,7 @@ protected:
   double          * phi_;
   double          * dx_;
   long            * flag_;
+  long            * ignore_mask_;
   int               error_;
   int               dim_;            // number of dimensions
   int               size_;           // flat size
