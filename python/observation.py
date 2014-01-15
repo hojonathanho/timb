@@ -90,18 +90,26 @@ def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
   return tsdf
 
 
-def depth_to_weights(depth, width=10):
+def depth_to_weights(depth, width=20):
   '''
   Computes weights for a depth image
   '''
 
-  from scipy.ndimage.filters import sobel
-  sobel(depth, mode='constant', cval=np.inf)
-
-  has_measurement = (depth != np.inf).astype(int)
+  has_measurement = (depth != np.inf).astype(float)
   filt = np.ones(2*width + 1); filt /= filt.sum()
   out = np.convolve(has_measurement, filt, 'same')
-  return np.clip(out - .5, 0, 1) * 2
+  # out = gaussian_filter(has_measurement, 5, mode='nearest')
+  print np.c_[has_measurement, out]
+
+  def f(x):
+    '''maps [.5, 1] to [0, 1], differentiable at boundary'''
+    y = .5*np.sin(2*np.pi*(x - .75)) + .5
+    y[x < .5] = 0.
+    y[x > 1.] = 1.
+    return y
+
+  # return np.clip(out - .5, 0, 1) * 2, out
+  return f(out)
 
 
 def compute_obs_weight(obs_sdf, depth, weight_max):
@@ -199,31 +207,38 @@ def test_rotate():
     img = ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
 
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    plt.subplot(221)
+    plt.subplot(231)
     plt.title('State')
     plt.axis('off')
-    plt.imshow(img, aspect=1).set_interpolation('nearest')
+    plt.imshow(img, aspect=1)
 
     TSDF_TRUNC = 10.
-    tsdf, sdf = state_to_tsdf(state, return_all=True)
-    plt.subplot(222)
+    tsdf, sdf, depth = state_to_tsdf(state, return_all=True)
+    plt.subplot(232)
     plt.axis('off')
     plt.title('Accurate')
     plt.contour(tsdf, levels=[0])
-    plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr')
 
-    tsdf, sdf = state_to_tsdf(state, mode='projective', return_all=True)
-    plt.subplot(223)
+    tsdf, sdf, _ = state_to_tsdf(state, mode='projective', return_all=True)
+    plt.subplot(233)
     plt.axis('off')
     plt.title('Projective')
     plt.contour(tsdf, levels=[0])
-    plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr')
 
     mask = state_to_visibility_mask(state)
-    plt.subplot(224)
+    plt.subplot(234)
     plt.axis('off')
     plt.title('Mask')
-    plt.imshow(mask)#.set_interpolation('nearest')
+    plt.imshow(mask)
+
+    depth_weight = depth_to_weights(depth)
+    plt.subplot(235)
+    plt.title('Depth weight')
+    z = np.ones_like(mask, dtype=float)
+    z *= depth_weight[:,None]
+    plt.imshow(z, cmap='Greys_r')
 
     plt.show()
 

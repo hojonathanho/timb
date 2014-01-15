@@ -214,7 +214,7 @@ def test_image():
 
   def run(angle, init_phi, init_omega):
     plt.clf()
-    matplotlib.rcParams.update({'font.size': 8})
+    matplotlib.rcParams.update({'font.size': 8, 'image.origin': 'lower'})
     img = ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
 
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
@@ -229,7 +229,7 @@ def test_image():
     plt.axis('off')
     plt.title('Observation TSDF')
     plt.contour(tsdf, levels=[0])
-    plt.imshow(to_img(tsdf), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
     # zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
     # plt.scatter(zero_points[:,0], zero_points[:,1])
 
@@ -238,19 +238,19 @@ def test_image():
     plt.axis('off')
     obs_weights = observation.compute_obs_weight(sdf, depth, OBS_PEAK_WEIGHT)
     # if angle == 0: obs_weights *= FIRST_OBS_EXTRA_WEIGHT
-    plt.imshow(to_img(obs_weights), cmap='binary', vmin=0, vmax=OBS_PEAK_WEIGHT*10).set_interpolation('nearest')
+    plt.imshow(obs_weights, cmap='binary', vmin=0, vmax=OBS_PEAK_WEIGHT*10).set_interpolation('nearest')
 
     # if angle != 0: init_phi = timb.reintegrate(init_phi)
     plt.subplot(254)
     plt.title('Prior TSDF')
     plt.axis('off')
-    plt.imshow(to_img(init_phi), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(init_phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
     plt.subplot(255)
     plt.title('Prior weight')
     plt.axis('off')
     # if angle != 0:
     #   init_omega.fill(1)
-    plt.imshow(to_img(init_omega), vmin=0, vmax=OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
+    plt.imshow(init_omega, vmin=0, vmax=OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
 
     SIZE = tsdf.shape[0]
     WORLD_MIN = (0., 0.)
@@ -259,18 +259,19 @@ def test_image():
     timb.Coeffs.flow_norm = 1e-6
     timb.Coeffs.flow_rigidity = 1.
     timb.Coeffs.observation = 1.
-    timb.Coeffs.prior = 10000.
+    timb.Coeffs.prior = 1.
     tracker = timb.Tracker(gp)
     tracker.opt.params().check_linearizations = False
     tracker.opt.params().keep_results_over_iterations = False
     tracker.opt.params().max_iter = 30
     tracker.opt.params().approx_improve_rel_tol = 1e-8
-    if angle == 0:
-    # if True:
+    # if angle == 0:
+    if True:
       tracker.set_observation(tsdf, obs_weights)
     else:
-      zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
-      tracker.set_observation_zc(zero_points)
+      # zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
+      # tracker.set_observation_zc(zero_points)
+      pass
     tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
     # initialization: previous phi, zero flow
     init_u = np.zeros(init_phi.shape + (2,))
@@ -294,21 +295,23 @@ def test_image():
       assert u_x.shape == u_y.shape
       x = np.linspace(gp.xmin, gp.xmax, gp.nx)
       y = np.linspace(gp.ymin, gp.ymax, gp.ny)
-      Y, X = np.meshgrid(x, y)
+      X, Y = np.meshgrid(x, y, indexing='ij')
       plt.quiver(X, Y, u_x, u_y, angles='xy', scale_units='xy', scale=1.)
     plot_u(result.u_x, result.u_y)
 
     plt.subplot(258)
     plt.title('New TSDF')
     plt.axis('off')
-    plt.imshow(to_img(result.phi), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.imshow(result.phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    plt.contour(tsdf, levels=[0])
+
 
     flowed_init_omega = timb.apply_flow(gp, init_omega, result.u_x, result.u_y)
     next_omega = flowed_init_omega + obs_weights
     plt.subplot(259)
     plt.title('New weight')
     plt.axis('off')
-    plt.imshow(to_img(next_omega), vmin=0, vmax=OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
+    plt.imshow(next_omega, vmin=0, vmax=OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
 
     # plt.subplot(2,5,10)
     # plt.title('Output')
@@ -317,15 +320,16 @@ def test_image():
     # # plt.imshow(next_omega > .5, vmin=0, vmax=1, cmap='binary').set_interpolation('nearest')
     # plt.imshow(np.zeros_like(tsdf), vmin=0, vmax=1, cmap='binary').set_interpolation('nearest')
 
-    next_phi = timb.march_from_zero_crossing(result.phi, True, (next_omega < .1))
-    next_phi = timb.reintegrate(next_phi, np.zeros_like(next_phi, dtype=bool))
+    # next_phi = timb.march_from_zero_crossing(result.phi, True, (next_omega < .1))
+    # next_phi = timb.reintegrate(next_phi, np.zeros_like(next_phi, dtype=bool))
+    next_phi = result.phi
 
-    plt.subplot(2,5,10)
-    plt.axis('off')
-    # plt.imshow(to_img(timb.reintegrate(result.phi, next_omega < .1)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
-    plt.imshow(to_img(next_phi), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    # plt.subplot(2,5,10)
+    # plt.axis('off')
+    # plt.imshow(timb.reintegrate(result.phi, next_omega < .1)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    # plt.imshow(next_phi, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
-    # plt.imshow(to_img(np.where(next_omega > .1, result.phi, -TSDF_TRUNC)), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
+    # plt.imshow(np.where(next_omega > .1, result.phi, -TSDF_TRUNC), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
 
     plt.show()
