@@ -1,7 +1,6 @@
 from ctimbpy import *
 
 import numpy as np
-from collections import namedtuple
 import observation
 
 class Coeffs(object):
@@ -9,9 +8,6 @@ class Coeffs(object):
   flow_rigidity = 1.
   observation = 1.
   agreement = 1.
-
-
-Result = namedtuple('Result', ['phi', 'u_x', 'u_y'])
 
 
 class State(object):
@@ -33,8 +29,9 @@ class State(object):
 
 
 class Tracker(object):
-  def __init__(self, grid_params):
+  def __init__(self, grid_params, use_iterative_reweighting=True):
     self.gp = grid_params
+    self.use_iterative_reweighting = use_iterative_reweighting
 
     self.opt = Optimizer()
     self.phi_vars = make_var_field(self.opt, 'phi', self.gp)
@@ -56,24 +53,44 @@ class Tracker(object):
     self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
 
+    self.prev_weights = None
+
   def set_prev_phi_and_weights(self, prev_phi, weights):
     self.agreement_cost.set_prev_phi_and_weights(prev_phi, weights)
+    self.prev_phi, self.prev_weights = prev_phi, weights
 
   def set_observation(self, obs, weights):
     self.observation_cost.set_observation(obs, weights)
     self.opt.set_cost_coeff(self.observation_cost, Coeffs.observation)
     self.opt.set_cost_coeff(self.observation_zc_cost, 0)
 
-  def set_observation_zc(self, pts):
-    self.observation_zc_cost.set_zero_points(pts)
-    self.opt.set_cost_coeff(self.observation_zc_cost, Coeffs.observation)
-    self.opt.set_cost_coeff(self.observation_cost, 0)
+  # def set_observation_zc(self, pts):
+  #   self.observation_zc_cost.set_zero_points(pts)
+  #   self.opt.set_cost_coeff(self.observation_zc_cost, Coeffs.observation)
+  #   self.opt.set_cost_coeff(self.observation_cost, 0)
 
   def optimize(self, init_state):
-    opt_result = self.opt.optimize(init_state.pack())
-    result = State.FromPacked(self.gp, opt_result.x)
-    return result, opt_result
 
+    def _optimize_once(state):
+      opt_result = self.opt.optimize(state.pack())
+      result = State.FromPacked(self.gp, opt_result.x)
+      return result, opt_result
+
+    if not self.use_iterative_reweighting:
+      return _optimize_once(init_state)
+
+    curr_state, results, opt_results = init_state, [], []
+    for i in range(3):
+      state, opt_result = _optimize_once(curr_state)
+
+      flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)
+      self.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
+
+      results.append(state)
+      opt_results.append(opt_result)
+      curr_state = state
+
+    return results[-1], opt_results[-1]
 
 def reintegrate(phi, ignore_mask):
   from timb_skfmm import distance

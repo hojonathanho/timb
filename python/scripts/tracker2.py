@@ -272,7 +272,7 @@ def test_image():
       # zero_points = np.transpose(np.nonzero(observation.state_to_visibility_mask(state) == 0))
       # tracker.set_observation_zc(zero_points)
       pass
-    tracker.agreement_cost.set_prev_phi_and_weights(init_phi, init_omega)
+    tracker.set_prev_phi_and_weights(init_phi, init_omega)
     # initialization: previous phi, zero flow
     init_u = np.zeros(init_phi.shape + (2,))
     # if angle != 0: init_u = generate_rot_flow(SIZE, INCR_ANGLE*np.pi/180) # optimization starting point
@@ -332,8 +332,8 @@ def test_image():
     # plt.imshow(np.where(next_omega > .1, result.phi, -TSDF_TRUNC), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
 
-    plt.show()
-    # plt.savefig('out/plots_%d.png' % angle, bbox_inches='tight')
+    # plt.show()
+    plt.savefig('out_irls/plots_%d.png' % angle, bbox_inches='tight')
 
     return next_phi, next_omega
 
