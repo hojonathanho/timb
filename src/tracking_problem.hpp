@@ -122,6 +122,53 @@ struct FlowNormCost : public CostFunc {
 };
 typedef boost::shared_ptr<FlowNormCost> FlowNormCostPtr;
 
+struct GradientCost : public CostFunc {
+  const GridParams m_gp;
+  VarField m_phi;
+
+  AffExprField m_phi_x, m_phi_y;
+  DoubleField m_phi_vals, m_phi_x_vals, m_phi_y_vals;
+
+  GradientCost(const VarField& phi)
+    : m_gp(phi.grid_params()),
+      m_phi(phi),
+      m_phi_x(m_gp), m_phi_y(m_gp),
+      m_phi_vals(m_gp), m_phi_x_vals(m_gp), m_phi_y_vals(m_gp)
+  {
+    gradient(m_phi, m_phi_x, m_phi_y);
+  }
+
+  string name() const { return "grad"; }
+  int num_residuals() const { return 2 * m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return true; }
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    extract_field_values(x, m_phi, m_phi_vals);
+    gradient(m_phi_vals, m_phi_x_vals, m_phi_y_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        out(k++) = m_phi_x_vals(i,j);
+        out(k++) = m_phi_y_vals(i,j);
+      }
+    }
+    assert(k == num_residuals());
+  }
+
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        lin.set_by_expr(k++, m_phi_x(i,j));
+        lin.set_by_expr(k++, m_phi_y(i,j));
+      }
+    }
+    assert(k == num_residuals());
+  }
+};
+typedef boost::shared_ptr<GradientCost> GradientCostPtr;
+
 struct ObservationCost : public CostFunc {
   const GridParams m_gp;
   const VarField m_phi; // next timestep TSDF variables
