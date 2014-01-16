@@ -67,22 +67,22 @@ static py::object py_apply_flow(const GridParams& gp, py::object py_phi, py::obj
   return to_numpy(flowed_phi);
 }
 
-// static py::object py_march_from_zero_crossing(py::object py_phi, bool propagate_sign=true, py::object py_ignore_mask=py::object()) {
-//   MatrixXd phi;
-//   util::fromNdarray(py_phi, phi);
+static py::object py_march_from_zero_crossing(py::object py_phi, bool propagate_sign=true, py::object py_ignore_mask=py::object()) {
+  MatrixXd phi;
+  util::fromNdarray(py_phi, phi);
 
-//   boost::scoped_ptr<MatrixXi> pignore_mask;
-//   if (py_ignore_mask != py::object()) {
-//     pignore_mask.reset(new MatrixXi);
-//     util::fromNdarray(py_ignore_mask, *pignore_mask);
-//   }
+  boost::scoped_ptr<MatrixXi> pignore_mask;
+  if (py_ignore_mask != py::object()) {
+    pignore_mask.reset(new MatrixXi);
+    util::fromNdarray(py_ignore_mask, *pignore_mask);
+  }
 
-//   MatrixXd out;
-//   march_from_zero_crossing(phi, propagate_sign, pignore_mask.get(), out);
+  MatrixXd out;
+  march_from_zero_crossing(phi, propagate_sign, pignore_mask.get(), out);
 
-//   return util::toNdarray(out);
-// }
-// BOOST_PYTHON_FUNCTION_OVERLOADS(py_march_from_zero_crossing_overloads, py_march_from_zero_crossing, 1, 3)
+  return util::toNdarray(out);
+}
+BOOST_PYTHON_FUNCTION_OVERLOADS(py_march_from_zero_crossing_overloads, py_march_from_zero_crossing, 1, 3)
 
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
@@ -107,17 +107,6 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<Var>("Var")
     .add_property("name", &Var::name)
     .def("__repr__", &Var::name)
-    ;
-
-  py::class_<GridParams>("GridParams", py::init<double, double, double, double, int, int>())
-    .def_readonly("xmin", &GridParams::xmin)
-    .def_readonly("xmax", &GridParams::xmax)
-    .def_readonly("ymin", &GridParams::ymin)
-    .def_readonly("ymax", &GridParams::ymax)
-    .def_readonly("nx", &GridParams::nx)
-    .def_readonly("ny", &GridParams::ny)
-    .def_readonly("eps_x", &GridParams::eps_x)
-    .def_readonly("eps_y", &GridParams::eps_y)
     ;
 
   py::enum_<OptStatus>("OptStatus")
@@ -160,10 +149,18 @@ BOOST_PYTHON_MODULE(ctimbpy) {
     // Don't expose anything. Only subclasses should be used from Python
     ;
 
+  py::class_<GridParams>("GridParams", py::init<double, double, double, double, int, int>())
+    .def_readonly("xmin", &GridParams::xmin)
+    .def_readonly("xmax", &GridParams::xmax)
+    .def_readonly("ymin", &GridParams::ymin)
+    .def_readonly("ymax", &GridParams::ymax)
+    .def_readonly("nx", &GridParams::nx)
+    .def_readonly("ny", &GridParams::ny)
+    .def_readonly("eps_x", &GridParams::eps_x)
+    .def_readonly("eps_y", &GridParams::eps_y)
+    ;
+
   py::class_<VarField>("VarField", py::no_init);
-  py::def("make_var_field", &py_make_var_field);
-  py::def("apply_flow", &py_apply_flow);
-  // py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
 
   py::class_<ExampleCost, ExampleCostPtr, py::bases<CostFunc> >("ExampleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
@@ -178,4 +175,8 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<AgreementCost, AgreementCostPtr, py::bases<CostFunc> >("AgreementCost", py::init<const VarField&, const VarField&, const VarField&>())
     .def("set_prev_phi_and_weights", &AgreementCost::py_set_prev_phi_and_weights)
     ;
+
+  py::def("make_var_field", &py_make_var_field);
+  py::def("apply_flow", &py_apply_flow);
+  py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
 }

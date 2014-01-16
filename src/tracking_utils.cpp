@@ -6,6 +6,7 @@
 #include <boost/heap/fibonacci_heap.hpp>
 
 
+
 void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const MatrixXi* pignore_mask, MatrixXd& out) {
   Eigen::MatrixXi started_as_zero(Eigen::MatrixXi::Zero(phi.rows(), phi.cols()));
   Eigen::MatrixXd sign_multiplier(Eigen::MatrixXd::Ones(phi.rows(), phi.cols()));
@@ -35,7 +36,8 @@ void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const Ma
         continue;
       }
 
-      if (fabs(phi(i,j)) < 1e-3) {
+      if (phi(i,j) == 0.0) {
+      // if (fabs(phi(i,j)) < 1e-3) {
         out(i,j) = 0.;
         started_as_zero(i,j) = 1;
       } else {
