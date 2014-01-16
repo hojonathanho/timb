@@ -1,6 +1,7 @@
 include_directories(
   ${EIGEN_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
+  ${CHOLMOD_INCLUDE_DIR}
 )
 
 link_directories(
@@ -17,7 +18,7 @@ add_library(timb
   optimizer.cpp
   logging.cpp
   numpy_utils.cpp
-  tracking_utils.cpp
+  # tracking_utils.cpp
 )
 target_link_libraries(timb ${CHOLMOD_LIBRARIES} ${BLAS_LIBRARIES})
 

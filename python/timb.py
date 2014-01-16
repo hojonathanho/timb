@@ -80,7 +80,7 @@ class Tracker(object):
       return _optimize_once(init_state)
 
     curr_state, results, opt_results = init_state, [], []
-    for i in range(3):
+    for i in range(5):
       state, opt_result = _optimize_once(curr_state)
 
       flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)

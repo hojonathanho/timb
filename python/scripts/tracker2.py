@@ -263,7 +263,7 @@ def test_image():
     tracker = timb.Tracker(gp)
     tracker.opt.params().check_linearizations = False
     tracker.opt.params().keep_results_over_iterations = False
-    tracker.opt.params().max_iter = 30
+    tracker.opt.params().max_iter = 5
     tracker.opt.params().approx_improve_rel_tol = 1e-8
     # if angle == 0:
     if True:

@@ -67,22 +67,22 @@ static py::object py_apply_flow(const GridParams& gp, py::object py_phi, py::obj
   return to_numpy(flowed_phi);
 }
 
-static py::object py_march_from_zero_crossing(py::object py_phi, bool propagate_sign=true, py::object py_ignore_mask=py::object()) {
-  MatrixXd phi;
-  util::fromNdarray(py_phi, phi);
+// static py::object py_march_from_zero_crossing(py::object py_phi, bool propagate_sign=true, py::object py_ignore_mask=py::object()) {
+//   MatrixXd phi;
+//   util::fromNdarray(py_phi, phi);
 
-  boost::scoped_ptr<MatrixXi> pignore_mask;
-  if (py_ignore_mask != py::object()) {
-    pignore_mask.reset(new MatrixXi);
-    util::fromNdarray(py_ignore_mask, *pignore_mask);
-  }
+//   boost::scoped_ptr<MatrixXi> pignore_mask;
+//   if (py_ignore_mask != py::object()) {
+//     pignore_mask.reset(new MatrixXi);
+//     util::fromNdarray(py_ignore_mask, *pignore_mask);
+//   }
 
-  MatrixXd out;
-  march_from_zero_crossing(phi, propagate_sign, pignore_mask.get(), out);
+//   MatrixXd out;
+//   march_from_zero_crossing(phi, propagate_sign, pignore_mask.get(), out);
 
-  return util::toNdarray(out);
-}
-BOOST_PYTHON_FUNCTION_OVERLOADS(py_march_from_zero_crossing_overloads, py_march_from_zero_crossing, 1, 3)
+//   return util::toNdarray(out);
+// }
+// BOOST_PYTHON_FUNCTION_OVERLOADS(py_march_from_zero_crossing_overloads, py_march_from_zero_crossing, 1, 3)
 
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
@@ -163,7 +163,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<VarField>("VarField", py::no_init);
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
-  py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
+  // py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
 
   py::class_<ExampleCost, ExampleCostPtr, py::bases<CostFunc> >("ExampleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
