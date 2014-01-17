@@ -220,7 +220,7 @@ struct OptimizerImpl {
           if (!close(numdiff_exprs[z], lin->exprs()[z])) {
             std::stringstream s1, s2;
             s1 << numdiff_exprs[z]; s2 << lin->exprs()[z];
-            PRINT_AND_THROW((boost::format("Cost %s: numdiff %s, analytical %s not close") % cost->name() % s1.str() % s2.str()).str());
+            PRINT_AND_THROW((boost::format("Incorrect linearization for cost %s:\n\tnumerical  %s\n\tanalytical %s") % cost->name() % s1.str() % s2.str()).str());
           }
         }
         LOG_DEBUG("Cost %s passed derivative check", cost->name().c_str());

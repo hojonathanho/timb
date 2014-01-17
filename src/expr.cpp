@@ -39,8 +39,7 @@ std::ostream& operator<<(std::ostream& o, const QuadExpr& e) {
   return o;
 }
 
-// Sorts an AffExpr's variables and coeffs by the variable name
-// (in-place)
+// Sorts an AffExpr's variables and coeffs by the variable name (in-place)
 static void sort_vars_by_name(AffExpr& a) {
   typedef std::pair<Var, double> P;
   std::vector<P> var2coeff;
@@ -59,8 +58,7 @@ static void sort_vars_by_name(AffExpr& a) {
 }
 
 bool close(const AffExpr& a_, const AffExpr& b_, double rtol, double atol) {
-  AffExpr a = cleanupAff(a_), b = cleanupAff(b_);
-  sort_vars_by_name(a); sort_vars_by_name(b);
+  AffExpr a = reduceAff(a_), b = reduceAff(b_);
   if (a.coeffs.size() != b.coeffs.size()) return false;
   if (!close(a.constant, b.constant)) return false;
   for (int i = 0; i < a.coeffs.size(); ++i) {
@@ -125,6 +123,23 @@ QuadExpr cleanupQuad(const QuadExpr& q) {
       out.coeffs.push_back(q.coeffs[i]);
       out.vars1.push_back(q.vars1[i]);
       out.vars2.push_back(q.vars2[i]);
+    }
+  }
+  return out;
+}
+
+AffExpr reduceAff(const AffExpr& a) {
+  AffExpr b = cleanupAff(a);
+  sort_vars_by_name(b);
+  AffExpr out(b.constant);
+  int k = -1;
+  for (int i = 0; i < b.size(); ++i) {
+    if (k != -1 && b.vars[i].name() == b.vars[i-1].name()) {
+      out.coeffs[k] += b.coeffs[i];
+    } else {
+      out.vars.push_back(b.vars[i]);
+      out.coeffs.push_back(b.coeffs[i]);
+      ++k;
     }
   }
   return out;

@@ -354,4 +354,4 @@ QuadExpr exprSquare(const AffExpr&);
 AffExpr cleanupAff(const AffExpr&);
 QuadExpr cleanupQuad(const QuadExpr&); //warning: might make it non-psd!
 
-
+AffExpr reduceAff(const AffExpr&);

@@ -212,7 +212,7 @@ struct LaplacianCost : public CostFunc {
     int k = 0;
     for (int i = 0; i < m_gp.nx; ++i) {
       for (int j = 0; j < m_gp.ny; ++j) {
-        lin.set_by_expr(k++, m_phi_xx(i,j) + m_phi_yy(i,j));
+        lin.set_by_expr(k++, reduceAff(m_phi_xx(i,j) + m_phi_yy(i,j)));
       }
     }
     assert(k == num_residuals());
