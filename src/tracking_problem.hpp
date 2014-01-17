@@ -169,6 +169,57 @@ struct GradientCost : public CostFunc {
 };
 typedef boost::shared_ptr<GradientCost> GradientCostPtr;
 
+struct LaplacianCost : public CostFunc {
+  const GridParams m_gp;
+  VarField m_phi;
+
+  AffExprField m_phi_xx, m_phi_yy;
+
+  DoubleField m_phi_vals, m_phi_x_vals, m_phi_y_vals, m_phi_xx_vals, m_phi_yy_vals;
+
+  LaplacianCost(const VarField& phi)
+    : m_gp(phi.grid_params()),
+      m_phi(phi),
+      m_phi_xx(m_gp), m_phi_yy(m_gp),
+      m_phi_vals(m_gp), m_phi_x_vals(m_gp), m_phi_y_vals(m_gp), m_phi_xx_vals(m_gp), m_phi_yy_vals(m_gp)
+  {
+    AffExprField phi_x(m_gp), phi_y(m_gp);
+    gradient(m_phi, phi_x, phi_y);
+    deriv_x(phi_x, m_phi_xx);
+    deriv_y(phi_y, m_phi_yy);
+  }
+
+  string name() const { return "laplacian"; }
+  int num_residuals() const { return m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return true; }
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    extract_field_values(x, m_phi, m_phi_vals);
+    gradient(m_phi_vals, m_phi_x_vals, m_phi_y_vals);
+    deriv_x(m_phi_x_vals, m_phi_xx_vals);
+    deriv_y(m_phi_y_vals, m_phi_yy_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        out(k++) = m_phi_xx_vals(i,j) + m_phi_yy_vals(i,j);
+      }
+    }
+    assert(k == num_residuals());
+  }
+
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        lin.set_by_expr(k++, m_phi_xx(i,j) + m_phi_yy(i,j));
+      }
+    }
+    assert(k == num_residuals());
+  }
+};
+typedef boost::shared_ptr<LaplacianCost> LaplacianCostPtr;
+
 struct ObservationCost : public CostFunc {
   const GridParams m_gp;
   const VarField m_phi; // next timestep TSDF variables

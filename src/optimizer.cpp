@@ -309,6 +309,8 @@ struct OptimizerImpl {
           scaling.coeffRef(i,i) = fmax(min_scaling, fjac.col(i).norm());
         }
         scaling.makeCompressed();
+
+        print_cost_info(result->cost_detail, result->cost_detail, result->cost_detail);
       }
 
       const double starting_cost = result->cost;

@@ -153,11 +153,12 @@ void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, co
   }
 }
 
+
 // one-sided finite differences
 template<typename T, typename S>
-void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S, S>& g_y) {
+void deriv_x(const ScalarField<T, S>& f, ScalarField<S, S>& g_x) {
   const GridParams& p = f.grid_params();
-  assert(p == g_x.grid_params() && p == g_y.grid_params());
+  assert(p == g_x.grid_params());
 
   // derivatives in x direction
   for (int i = 0; i < p.nx - 1; ++i) {
@@ -169,6 +170,12 @@ void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S,
   for (int j = 0; j < p.ny; ++j) {
     g_x(p.nx-1,j) = g_x(p.nx-2,j);
   }
+}
+// one-sided finite differences
+template<typename T, typename S>
+void deriv_y(const ScalarField<T, S>& f, ScalarField<S, S>& g_y) {
+  const GridParams& p = f.grid_params();
+  assert(p == g_y.grid_params());
 
   // derivatives in y direction
   for (int i = 0; i < p.nx; ++i) {
@@ -178,4 +185,11 @@ void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S,
     // copy over last column
     g_y(i,p.ny-1) = g_y(i,p.ny-2);
   }
+}
+
+// one-sided finite differences
+template<typename T, typename S>
+void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S, S>& g_y) {
+  deriv_x(f, g_x);
+  deriv_y(f, g_y);
 }
