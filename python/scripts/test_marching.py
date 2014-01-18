@@ -66,6 +66,7 @@ def smooth_by_laplacian(phi, obs, obs_weights):
 
   gp = GridParams(-1, 1, -1, 1, phi.shape[0], phi.shape[1])
   opt = Optimizer()
+  # opt.params().check_linearizations = True
   phi_vars = make_var_field(opt, 'phi', gp)
 
   obs_cost = ObservationCost(phi_vars)
@@ -73,7 +74,7 @@ def smooth_by_laplacian(phi, obs, obs_weights):
   opt.add_cost(obs_cost)
 
   laplacian_cost = LaplacianCost(phi_vars)
-  opt.add_cost(laplacian_cost, 1)
+  opt.add_cost(laplacian_cost, 1e-5)
 
   result = opt.optimize(phi.ravel())
   new_phi = result.x.reshape(phi.shape)
@@ -83,11 +84,11 @@ def smooth_by_laplacian(phi, obs, obs_weights):
 
 
 def main():
-  SIZE = 20
+  SIZE = 10
   phi = np.zeros((SIZE, SIZE))
   # phi[SIZE/4:SIZE*3/4, SIZE/2] = 0.
   phi.fill(np.inf)
-  obs_width = 10
+  obs_width = 6
   obs = np.linspace(-1, 1, obs_width)
   phi[SIZE/4:SIZE*3/4, SIZE/2-obs_width/2:SIZE/2+obs_width/2] = obs[None,:]
   ignore_mask = np.empty_like(phi, dtype=bool)
@@ -108,12 +109,12 @@ def main():
   plt.title('FMM')
   plt.imshow(out_fmm, cmap='bwr')
 
-  out_opt = smooth_by_laplacian(phi, phi, (~ignore_mask).astype(float) + 1e-6)
+  out_opt = smooth_by_laplacian(phi, phi, (~ignore_mask).astype(float) )
 
   print 'opt'; print out_opt
   plt.subplot(133)
   plt.title('Optimization')
-  plt.imshow(out_opt, cmap='bwr')
+  plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
 
   plt.show()
 

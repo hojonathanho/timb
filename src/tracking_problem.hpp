@@ -175,18 +175,21 @@ struct LaplacianCost : public CostFunc {
 
   AffExprField m_phi_xx, m_phi_yy;
 
-  DoubleField m_phi_vals, m_phi_x_vals, m_phi_y_vals, m_phi_xx_vals, m_phi_yy_vals;
+  DoubleField m_phi_vals;/*, m_phi_x_vals, m_phi_y_vals,*/
+  DoubleField m_phi_xx_vals, m_phi_yy_vals;
 
   LaplacianCost(const VarField& phi)
     : m_gp(phi.grid_params()),
       m_phi(phi),
       m_phi_xx(m_gp), m_phi_yy(m_gp),
-      m_phi_vals(m_gp), m_phi_x_vals(m_gp), m_phi_y_vals(m_gp), m_phi_xx_vals(m_gp), m_phi_yy_vals(m_gp)
+      m_phi_vals(m_gp), /*m_phi_x_vals(m_gp), m_phi_y_vals(m_gp),*/ m_phi_xx_vals(m_gp), m_phi_yy_vals(m_gp)
   {
     AffExprField phi_x(m_gp), phi_y(m_gp);
-    gradient(m_phi, phi_x, phi_y);
-    deriv_x(phi_x, m_phi_xx);
-    deriv_y(phi_y, m_phi_yy);
+    // gradient(m_phi, phi_x, phi_y);
+    // deriv_x(phi_x, m_phi_xx);
+    // deriv_y(phi_y, m_phi_yy);
+    deriv2_x(m_phi, m_phi_xx);
+    deriv2_y(m_phi, m_phi_yy);
   }
 
   string name() const { return "laplacian"; }
@@ -195,9 +198,11 @@ struct LaplacianCost : public CostFunc {
 
   void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
     extract_field_values(x, m_phi, m_phi_vals);
-    gradient(m_phi_vals, m_phi_x_vals, m_phi_y_vals);
-    deriv_x(m_phi_x_vals, m_phi_xx_vals);
-    deriv_y(m_phi_y_vals, m_phi_yy_vals);
+    // gradient(m_phi_vals, m_phi_x_vals, m_phi_y_vals);
+    // deriv_x(m_phi_x_vals, m_phi_xx_vals);
+    // deriv_y(m_phi_y_vals, m_phi_yy_vals);
+    deriv2_x(m_phi_vals, m_phi_xx_vals);
+    deriv2_y(m_phi_vals, m_phi_yy_vals);
 
     int k = 0;
     for (int i = 0; i < m_gp.nx; ++i) {

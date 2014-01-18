@@ -9,6 +9,7 @@ using std::map;
 #include <boost/format.hpp>
 
 #include <Eigen/CholmodSupport>
+#include <Eigen/Eigenvalues>
 
 OptParams::OptParams() :
   init_trust_region_size(1e4),
@@ -270,6 +271,17 @@ struct OptimizerImpl {
     double damping = 1e-5;
     double damping_increase_factor = 2.;
 
+    bool all_costs_linear = true;
+    for (CostFuncPtr cost : m_costs) {
+      if (!cost->is_linear()) {
+        all_costs_linear = false;
+        break;
+      }
+    }
+    if (all_costs_linear) {
+      damping = 0;
+    }
+
     OptResultPtr result(new OptResult);
     result->x = start_x;
     result->status = OPT_INCOMPLETE;
@@ -328,8 +340,14 @@ struct OptimizerImpl {
         x_changed = false;
       }
 
+      /////////////
+      // Eigen::EigenSolver<MatrixXd> es(jtj.toDense());
+      // std::cout << "eigenvalues: "<< es.eigenvalues() << std::endl;
+      /////////////
+
       lin_lhs = jtj + damping*scaling.transpose()*scaling;
       solver.compute(lin_lhs);
+
       delta_x = solver.solve(lin_rhs);
 
       // Check gradient convergence condition
@@ -422,6 +440,9 @@ struct OptimizerImpl {
     }
 
     result->n_iters = iter;
+
+    print_cost_info(result->cost_detail, result->cost_detail, result->cost_detail);
+
     return result;
 
   }

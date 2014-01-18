@@ -187,9 +187,41 @@ void deriv_y(const ScalarField<T, S>& f, ScalarField<S, S>& g_y) {
   }
 }
 
-// one-sided finite differences
 template<typename T, typename S>
 void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S, S>& g_y) {
   deriv_x(f, g_x);
   deriv_y(f, g_y);
+}
+
+
+template<typename T, typename S>
+void deriv2_x(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
+  const GridParams& p = f.grid_params();
+  assert(p == out.grid_params());
+  const double d = 1./(p.eps_x*p.eps_x);
+
+  for (int i = 0; i < p.nx; ++i) {
+    for (int j = 0; j < p.ny; ++j) {
+      const T &a = i-1 >= 0 ? f(i-1,j) : f(i,j);
+      const T &b = f(i,j);
+      const T &c = i+1 < p.nx ? f(i+1,j) : f(i,j);
+      out(i,j) = (a - 2.*b + c) * d;
+    }
+  }
+}
+
+template<typename T, typename S>
+void deriv2_y(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
+  const GridParams& p = f.grid_params();
+  assert(p == out.grid_params());
+  const double d = 1./(p.eps_y*p.eps_y);
+
+  for (int i = 0; i < p.nx; ++i) {
+    for (int j = 0; j < p.ny; ++j) {
+      const T &a = j-1 >= 0 ? f(i,j-1) : f(i,j);
+      const T &b = f(i,j);
+      const T &c = j+1 < p.ny ? f(i,j+1) : f(i,j);
+      out(i,j) = (a - 2.*b + c) * d;
+    }
+  }
 }
