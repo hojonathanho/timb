@@ -61,7 +61,7 @@ def main_single_line():
 from ctimbpy import *
 def smooth_by_optimization(phi, obs, obs_weights, mode='laplacian'):
   assert phi.shape[0] == phi.shape[1]
-  assert mode in ['laplacian', 'gradient']
+  assert mode in ['laplacian', 'gradient', 'tps']
 
   print 'obs weights', obs_weights
 
@@ -80,6 +80,9 @@ def smooth_by_optimization(phi, obs, obs_weights, mode='laplacian'):
   elif mode == 'gradient':
     grad_cost = GradientCost(phi_vars)
     opt.add_cost(grad_cost, 1e-10)
+  elif mode == 'tps':
+    tps_cost = TPSCost(phi_vars)
+    opt.add_cost(tps_cost, 1e-10)
   else:
     raise NotImplementedError
 
@@ -105,33 +108,39 @@ def main():
 
   print 'phi'; print phi
   print 'mask'; print ignore_mask
-  plt.subplot(221)
+  plt.subplot(331)
   plt.title('Orig')
   plt.imshow(phi, cmap='bwr')
 
   out_fmm = timb.march_from_zero_crossing(phi, True, ignore_mask)
-
   print 'fmm'; print out_fmm
-  plt.subplot(222)
+  plt.subplot(332)
   plt.title('FMM')
   plt.imshow(out_fmm, cmap='bwr')
 
-  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='laplacian')
-
-  print 'opt'; print out_opt
+  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='gradient')
+  print 'gradient'; print out_opt
   v = SIZE
-  plt.subplot(223)
+  plt.subplot(333)
+  plt.title('Gradient cost')
+  plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
+
+
+  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='laplacian')
+  print 'laplacian'; print out_opt
+  v = SIZE
+  plt.subplot(334)
   plt.title('Laplacian cost')
   plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
   # plt.plot(out_opt[50,:])
 
-  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='gradient')
-
-  print 'opt'; print out_opt
+  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='tps')
+  print 'tps'; print out_opt
   v = SIZE
-  plt.subplot(224)
-  plt.title('Gradient cost')
+  plt.subplot(335)
+  plt.title('TPS cost')
   plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
+  # plt.plot(out_opt[50,:])
 
   plt.show()
 

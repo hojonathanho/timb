@@ -167,6 +167,7 @@ BOOST_PYTHON_MODULE(ctimbpy) {
   py::class_<FlowRigidityCost, FlowRigidityCostPtr, py::bases<CostFunc> >("FlowRigidityCost", py::init<const VarField&, const VarField&>());
   py::class_<GradientCost, GradientCostPtr, py::bases<CostFunc> >("GradientCost", py::init<const VarField&>());
   py::class_<LaplacianCost, LaplacianCostPtr, py::bases<CostFunc> >("LaplacianCost", py::init<const VarField&>());
+  py::class_<TPSCost, TPSCostPtr, py::bases<CostFunc> >("TPSCost", py::init<const VarField&>());
   py::class_<ObservationCost, ObservationCostPtr, py::bases<CostFunc> >("ObservationCost", py::init<const VarField&>())
     .def("set_observation", &ObservationCost::py_set_observation)
     ;

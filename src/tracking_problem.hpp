@@ -175,21 +175,18 @@ struct LaplacianCost : public CostFunc {
 
   AffExprField m_phi_xx, m_phi_yy;
 
-  DoubleField m_phi_vals;/*, m_phi_x_vals, m_phi_y_vals,*/
+  DoubleField m_phi_vals;
   DoubleField m_phi_xx_vals, m_phi_yy_vals;
 
   LaplacianCost(const VarField& phi)
     : m_gp(phi.grid_params()),
       m_phi(phi),
       m_phi_xx(m_gp), m_phi_yy(m_gp),
-      m_phi_vals(m_gp), /*m_phi_x_vals(m_gp), m_phi_y_vals(m_gp),*/ m_phi_xx_vals(m_gp), m_phi_yy_vals(m_gp)
+      m_phi_vals(m_gp), m_phi_xx_vals(m_gp), m_phi_yy_vals(m_gp)
   {
     AffExprField phi_x(m_gp), phi_y(m_gp);
-    // gradient(m_phi, phi_x, phi_y);
-    // deriv_x(phi_x, m_phi_xx);
-    // deriv_y(phi_y, m_phi_yy);
-    deriv2_x(m_phi, m_phi_xx);
-    deriv2_y(m_phi, m_phi_yy);
+    deriv_xx(m_phi, m_phi_xx);
+    deriv_yy(m_phi, m_phi_yy);
   }
 
   string name() const { return "laplacian"; }
@@ -198,11 +195,8 @@ struct LaplacianCost : public CostFunc {
 
   void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
     extract_field_values(x, m_phi, m_phi_vals);
-    // gradient(m_phi_vals, m_phi_x_vals, m_phi_y_vals);
-    // deriv_x(m_phi_x_vals, m_phi_xx_vals);
-    // deriv_y(m_phi_y_vals, m_phi_yy_vals);
-    deriv2_x(m_phi_vals, m_phi_xx_vals);
-    deriv2_y(m_phi_vals, m_phi_yy_vals);
+    deriv_xx(m_phi_vals, m_phi_xx_vals);
+    deriv_yy(m_phi_vals, m_phi_yy_vals);
 
     int k = 0;
     for (int i = 0; i < m_gp.nx; ++i) {
@@ -224,6 +218,68 @@ struct LaplacianCost : public CostFunc {
   }
 };
 typedef boost::shared_ptr<LaplacianCost> LaplacianCostPtr;
+
+struct TPSCost : public CostFunc {
+  const GridParams m_gp;
+  VarField m_phi;
+
+  AffExprField m_phi_xx, m_phi_yy, m_phi_xy;
+
+  DoubleField m_phi_vals;
+  DoubleField m_phi_xx_vals, m_phi_yy_vals, m_phi_xy_vals;
+  DoubleField m_phi_x_vals; // temporary for calculating xy derivatives
+
+  TPSCost(const VarField& phi)
+    : m_gp(phi.grid_params()),
+      m_phi(phi),
+      m_phi_xx(m_gp), m_phi_yy(m_gp), m_phi_xy(m_gp),
+      m_phi_vals(m_gp), m_phi_xx_vals(m_gp), m_phi_yy_vals(m_gp),
+      m_phi_xy_vals(m_gp), m_phi_x_vals(m_gp)
+  {
+    deriv_xx(m_phi, m_phi_xx);
+    deriv_yy(m_phi, m_phi_yy);
+
+    AffExprField phi_x(m_gp);
+    deriv_x_central(m_phi, phi_x);
+    deriv_y_central(phi_x, m_phi_xy);
+  }
+
+  string name() const { return "tps"; }
+  int num_residuals() const { return 3 * m_gp.nx * m_gp.ny; }
+  bool is_linear() const { return true; }
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    extract_field_values(x, m_phi, m_phi_vals);
+    deriv_xx(m_phi_vals, m_phi_xx_vals);
+    deriv_yy(m_phi_vals, m_phi_yy_vals);
+
+    deriv_x_central(m_phi_vals, m_phi_x_vals);
+    deriv_y_central(m_phi_x_vals, m_phi_xy_vals);
+
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        out(k++) = m_phi_xx_vals(i,j);
+        out(k++) = SQRT2*m_phi_xy_vals(i,j);
+        out(k++) = m_phi_yy_vals(i,j);
+      }
+    }
+    assert(k == num_residuals());
+  }
+
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    int k = 0;
+    for (int i = 0; i < m_gp.nx; ++i) {
+      for (int j = 0; j < m_gp.ny; ++j) {
+        lin.set_by_expr(k++, m_phi_xx(i,j));
+        lin.set_by_expr(k++, reduceAff(SQRT2*m_phi_xy(i,j)));
+        lin.set_by_expr(k++, m_phi_yy(i,j));
+      }
+    }
+    assert(k == num_residuals());
+  }
+};
+typedef boost::shared_ptr<TPSCost> TPSCostPtr;
 
 struct ObservationCost : public CostFunc {
   const GridParams m_gp;

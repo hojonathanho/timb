@@ -153,7 +153,6 @@ void apply_flow(const ScalarField<ElemT, ExprT>& phi, const DoubleField& u_x, co
   }
 }
 
-
 // one-sided finite differences
 template<typename T, typename S>
 void deriv_x(const ScalarField<T, S>& f, ScalarField<S, S>& g_x) {
@@ -193,9 +192,49 @@ void gradient(const ScalarField<T, S>& f, ScalarField<S, S>& g_x, ScalarField<S,
   deriv_y(f, g_y);
 }
 
+template<typename T, typename S>
+void deriv_x_central(const ScalarField<T, S>& f, ScalarField<S, S>& g_x) {
+  const GridParams& p = f.grid_params();
+  assert(p == g_x.grid_params());
+
+  // derivatives in x direction
+  // forward/backward differences for edges, central for everything else
+  for (int i = 0; i < p.nx; ++i) {
+    for (int j = 0; j < p.ny; ++j) {
+      if (i == 0) {
+        g_x(i,j) = (f(i+1,j) - f(i,j)) * (1./p.eps_x);
+      } else if (i == p.nx-1) {
+        g_x(i,j) = (f(i,j) - f(i-1,j)) * (1./p.eps_x);
+      } else {
+        g_x(i,j) = (f(i+1,j) - f(i-1,j)) * (1./(2.*p.eps_x));
+      }
+    }
+  }
+}
 
 template<typename T, typename S>
-void deriv2_x(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
+void deriv_y_central(const ScalarField<T, S>& f, ScalarField<S, S>& g_y) {
+  const GridParams& p = f.grid_params();
+  assert(p == g_y.grid_params());
+
+  // derivatives in y direction
+  // forward/backward differences for edges, central for everything else
+  for (int i = 0; i < p.nx; ++i) {
+    for (int j = 0; j < p.ny; ++j) {
+      if (j == 0) {
+        g_y(i,j) = (f(i,j+1) - f(i,j)) * (1./p.eps_y);
+      } else if (j == p.ny-1) {
+        g_y(i,j) = (f(i,j) - f(i,j-1)) * (1./p.eps_y);
+      } else {
+        g_y(i,j) = (f(i,j+1) - f(i,j-1)) * (1./(2.*p.eps_y));
+      }
+    }
+  }
+}
+
+// second derivatives. central differences
+template<typename T, typename S>
+void deriv_xx(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
   const GridParams& p = f.grid_params();
   assert(p == out.grid_params());
   assert(p.nx >= 3);
@@ -224,7 +263,7 @@ void deriv2_x(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
 }
 
 template<typename T, typename S>
-void deriv2_y(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
+void deriv_yy(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
   const GridParams& p = f.grid_params();
   assert(p == out.grid_params());
   assert(p.ny >= 3);
@@ -233,7 +272,6 @@ void deriv2_y(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
 
   for (int i = 0; i < p.nx; ++i) {
     for (int j = 0; j < p.ny; ++j) {
-
       T a, b, c;
       if (j == 0) {
         a = f(i,j);
