@@ -40,3 +40,5 @@ template<typename T>
 inline T square(const T& x) { return x*x; }
 
 #define SQRT2 1.41421356237
+
+inline bool close(double a, double b, double rtol=1e-05, double atol=1e-08) { return fabs(a - b) <= (atol + rtol*fabs(b)); }

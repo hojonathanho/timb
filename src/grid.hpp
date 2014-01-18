@@ -198,13 +198,26 @@ template<typename T, typename S>
 void deriv2_x(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
   const GridParams& p = f.grid_params();
   assert(p == out.grid_params());
+  assert(p.nx >= 3);
+
   const double d = 1./(p.eps_x*p.eps_x);
 
   for (int i = 0; i < p.nx; ++i) {
     for (int j = 0; j < p.ny; ++j) {
-      const T &a = i-1 >= 0 ? f(i-1,j) : f(i,j);
-      const T &b = f(i,j);
-      const T &c = i+1 < p.nx ? f(i+1,j) : f(i,j);
+      T a, b, c;
+      if (i == 0) {
+        a = f(i,j);
+        b = f(i+1,j);
+        c = f(i+2,j);
+      } else if (i == p.nx-1) {
+        a = f(i-2,j);
+        b = f(i-1,j);
+        c = f(i,j);
+      } else {
+        a = f(i-1,j);
+        b = f(i,j);
+        c = f(i+1,j);
+      }
       out(i,j) = (a - 2.*b + c) * d;
     }
   }
@@ -214,13 +227,27 @@ template<typename T, typename S>
 void deriv2_y(const ScalarField<T, S>& f, ScalarField<S, S>& out) {
   const GridParams& p = f.grid_params();
   assert(p == out.grid_params());
+  assert(p.ny >= 3);
+
   const double d = 1./(p.eps_y*p.eps_y);
 
   for (int i = 0; i < p.nx; ++i) {
     for (int j = 0; j < p.ny; ++j) {
-      const T &a = j-1 >= 0 ? f(i,j-1) : f(i,j);
-      const T &b = f(i,j);
-      const T &c = j+1 < p.ny ? f(i,j+1) : f(i,j);
+
+      T a, b, c;
+      if (j == 0) {
+        a = f(i,j);
+        b = f(i,j+1);
+        c = f(i,j+2);
+      } else if (j == p.ny-1) {
+        a = f(i,j-2);
+        b = f(i,j-1);
+        c = f(i,j);
+      } else {
+        a = f(i,j-1);
+        b = f(i,j);
+        c = f(i,j+1);
+      }
       out(i,j) = (a - 2.*b + c) * d;
     }
   }

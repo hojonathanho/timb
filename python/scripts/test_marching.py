@@ -58,9 +58,10 @@ def main_single_line():
   plt.show()
 
 
-def smooth_by_laplacian(phi, obs, obs_weights):
-  from ctimbpy import *
+from ctimbpy import *
+def smooth_by_optimization(phi, obs, obs_weights, mode='laplacian'):
   assert phi.shape[0] == phi.shape[1]
+  assert mode in ['laplacian', 'gradient']
 
   print 'obs weights', obs_weights
 
@@ -73,8 +74,14 @@ def smooth_by_laplacian(phi, obs, obs_weights):
   obs_cost.set_observation(obs, obs_weights)
   opt.add_cost(obs_cost)
 
-  laplacian_cost = LaplacianCost(phi_vars)
-  opt.add_cost(laplacian_cost, 1e-5)
+  if mode == 'laplacian':
+    laplacian_cost = LaplacianCost(phi_vars)
+    opt.add_cost(laplacian_cost, 1e-10)
+  elif mode == 'gradient':
+    grad_cost = GradientCost(phi_vars)
+    opt.add_cost(grad_cost, 1e-10)
+  else:
+    raise NotImplementedError
 
   result = opt.optimize(phi.ravel())
   new_phi = result.x.reshape(phi.shape)
@@ -84,7 +91,7 @@ def smooth_by_laplacian(phi, obs, obs_weights):
 
 
 def main():
-  SIZE = 10
+  SIZE = 100
   phi = np.zeros((SIZE, SIZE))
   # phi[SIZE/4:SIZE*3/4, SIZE/2] = 0.
   phi.fill(np.inf)
@@ -98,22 +105,32 @@ def main():
 
   print 'phi'; print phi
   print 'mask'; print ignore_mask
-  plt.subplot(131)
+  plt.subplot(221)
   plt.title('Orig')
   plt.imshow(phi, cmap='bwr')
 
   out_fmm = timb.march_from_zero_crossing(phi, True, ignore_mask)
 
   print 'fmm'; print out_fmm
-  plt.subplot(132)
+  plt.subplot(222)
   plt.title('FMM')
   plt.imshow(out_fmm, cmap='bwr')
 
-  out_opt = smooth_by_laplacian(phi, phi, (~ignore_mask).astype(float) )
+  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='laplacian')
 
   print 'opt'; print out_opt
-  plt.subplot(133)
-  plt.title('Optimization')
+  v = SIZE
+  plt.subplot(223)
+  plt.title('Laplacian cost')
+  plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
+  # plt.plot(out_opt[50,:])
+
+  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='gradient')
+
+  print 'opt'; print out_opt
+  v = SIZE
+  plt.subplot(224)
+  plt.title('Gradient cost')
   plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
 
   plt.show()

@@ -45,7 +45,7 @@ static void run(double c1, double c2, double w1, double w2) {
   OptResultPtr result = opt.optimize(init_x);
 
   double expected = (w1*c1 + w2*c2) / (w1 + w2);
-  EXPECT_LT(fabs(result->x(0) - expected), 1e-9);
+  EXPECT_TRUE(close(result->x(0), expected));
 }
 
 TEST(SimpleTest, WeightTest) {
