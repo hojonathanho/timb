@@ -53,6 +53,9 @@ class Tracker(object):
     self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
 
+    # self.tps_cost = TPSCost(self.phi_vars)
+    # self.opt.add_cost(self.tps_cost, 1e-10)
+
     self.prev_weights = None
 
   def set_prev_phi_and_weights(self, prev_phi, weights):
@@ -92,10 +95,34 @@ class Tracker(object):
 
     return results[-1], opt_results[-1]
 
-def reintegrate(phi, ignore_mask):
-  from timb_skfmm import distance
-  d = distance(phi, ignore_mask=ignore_mask, order=1)
-  return np.clip(d, -observation.TRUNC_DIST, observation.TRUNC_DIST)
+def smooth(phi, weights, mode='tps'):
+  # from timb_skfmm import distance
+  # d = distance(phi, ignore_mask=ignore_mask, order=1)
+  # return np.clip(d, -observation.TRUNC_DIST, observation.TRUNC_DIST)
+
+  assert phi.shape[0] == phi.shape[1]
+  assert mode in ['laplacian', 'gradient', 'tps']
+
+  gp = GridParams(-1, 1, -1, 1, phi.shape[0], phi.shape[1])
+  opt = Optimizer()
+  phi_vars = make_var_field(opt, 'phi', gp)
+
+  obs_cost = ObservationCost(phi_vars)
+  obs_cost.set_observation(phi, weights)
+  opt.add_cost(obs_cost, 1e5)
+
+  if mode == 'laplacian':
+    opt.add_cost(LaplacianCost(phi_vars), 1e-10)
+  elif mode == 'gradient':
+    opt.add_cost(GradientCost(phi_vars), 1e-10)
+  elif mode == 'tps':
+    opt.add_cost(TPSCost(phi_vars), 1e-10)
+  else:
+    raise NotImplementedError
+
+  result = opt.optimize(phi.ravel())
+  new_phi = result.x.reshape(phi.shape)
+  return new_phi
 
 
 # Utility functions
