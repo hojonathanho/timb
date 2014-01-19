@@ -92,54 +92,97 @@ def smooth_by_optimization(phi, obs, obs_weights, mode='laplacian'):
   return new_phi
 
 
+def make_square_img(SIZE, negate_inside=True):
+  a = np.empty((SIZE, SIZE), dtype=np.uint8); a.fill(255)
+  a[int(SIZE/4.),int(SIZE/4.):-int(SIZE/4.)] = 0
+  a[int(SIZE/4.):-int(SIZE/4.),int(SIZE/4.)] = 0
+  a[int(SIZE/4.):-int(SIZE/4.),-int(SIZE/4.)] = 0
+  a[-int(SIZE/4.),int(SIZE/4.):-int(SIZE/4.)+1] = 0
+  img = np.empty((SIZE, SIZE, 3), dtype=np.uint8)
+  for i in range(3):
+    img[:,:,i] = a
+  return img
+
 
 def main():
   SIZE = 100
-  phi = np.zeros((SIZE, SIZE))
-  # phi[SIZE/4:SIZE*3/4, SIZE/2] = 0.
-  phi.fill(np.inf)
-  obs_width = 6
-  obs = np.linspace(-1, 1, obs_width)
-  phi[SIZE/4:SIZE*3/4, SIZE/2-obs_width/2:SIZE/2+obs_width/2] = obs[None,:]
-  ignore_mask = np.empty_like(phi, dtype=bool)
-  ignore_mask.fill(True)
-  ignore_mask[phi != np.inf] = False
-  phi[phi == np.inf] = 0
+  # phi = np.zeros((SIZE, SIZE))
+  # phi.fill(np.inf)
+  # obs_width = 6
+  # obs = np.linspace(-1, 1, obs_width)
+  # phi[SIZE/4:SIZE*3/4, SIZE/2-obs_width/2:SIZE/2+obs_width/2] = obs[None,:]
+  # ignore_mask = np.empty_like(phi, dtype=bool)
+  # ignore_mask.fill(True)
+  # ignore_mask[phi != np.inf] = False
+  # phi[phi == np.inf] = 0
+  # obs_weights = (~ignore_mask).astype(float)
+
+
+  orig_img = make_square_img(SIZE)
+  angle = 0
+  import observation
+  import scipy.ndimage
+  img = scipy.ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
+  state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
+  tsdf, sdf, depth = observation.state_to_tsdf(state, return_all=True)
+  OBS_PEAK_WEIGHT = 1.
+  obs_weights = observation.compute_obs_weight(sdf, depth, OBS_PEAK_WEIGHT)
+  # truncated = abs(tsdf-sdf) < 1e-5
+  truncated = abs(sdf) > observation.TRUNC_DIST
+  obs_weights[truncated] = 0
+
+  phi = tsdf
+  ignore_mask = obs_weights == 0
 
   print 'phi'; print phi
   print 'mask'; print ignore_mask
   plt.subplot(331)
   plt.title('Orig')
-  plt.imshow(phi, cmap='bwr')
+  plt.imshow(phi, cmap='bwr', vmin=-observation.TRUNC_DIST, vmax=observation.TRUNC_DIST)
+  # plt.plot(phi[50,:])
+  plt.contour(phi, levels=[-10, 0, 10])
 
-  out_fmm = timb.march_from_zero_crossing(phi, True, ignore_mask)
-  print 'fmm'; print out_fmm
+  # out_fmm = timb.march_from_zero_crossing(phi, True, ignore_mask)
+  # print 'fmm'; print out_fmm
+  # plt.subplot(332)
+  # plt.title('FMM')
+  # plt.imshow(out_fmm, cmap='bwr')
+
   plt.subplot(332)
-  plt.title('FMM')
-  plt.imshow(out_fmm, cmap='bwr')
+  plt.title('Weights')
+  plt.imshow(obs_weights, vmin=0, vmax=1, cmap='Greys_r')
+  print 'weights'
+  print obs_weights
 
-  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='gradient')
+  plt.subplot(333)
+  plt.title('Weighted obs')
+  plt.imshow(obs_weights*phi, cmap='bwr', vmin=-observation.TRUNC_DIST, vmax=observation.TRUNC_DIST)
+
+  out_opt = smooth_by_optimization(phi, phi, obs_weights, mode='gradient')
   print 'gradient'; print out_opt
   v = SIZE
-  plt.subplot(333)
+  plt.subplot(334)
   plt.title('Gradient cost')
-  plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
+  plt.imshow(out_opt, cmap='bwr', vmin=-20, vmax=20)
+  plt.contour(out_opt, levels=[-10, 0, 10])
 
 
-  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='laplacian')
+  out_opt = smooth_by_optimization(phi, phi, obs_weights, mode='laplacian')
   print 'laplacian'; print out_opt
   v = SIZE
-  plt.subplot(334)
+  plt.subplot(335)
   plt.title('Laplacian cost')
-  plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
+  plt.imshow(out_opt, cmap='bwr', vmin=-20, vmax=20)
+  plt.contour(out_opt, levels=[-10, 0, 10])
   # plt.plot(out_opt[50,:])
 
-  out_opt = smooth_by_optimization(phi, phi, (~ignore_mask).astype(float), mode='tps')
+  out_opt = smooth_by_optimization(phi, phi, obs_weights, mode='tps')
   print 'tps'; print out_opt
   v = SIZE
-  plt.subplot(335)
+  plt.subplot(336)
   plt.title('TPS cost')
-  plt.imshow(out_opt, cmap='bwr')#, vmin=-20, vmax=20)
+  plt.imshow(out_opt, cmap='bwr', vmin=-20, vmax=20)
+  plt.contour(out_opt, levels=[-10, 0, 10])
   # plt.plot(out_opt[50,:])
 
   plt.show()

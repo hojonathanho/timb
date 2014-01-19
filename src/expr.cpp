@@ -60,7 +60,7 @@ static void sort_vars_by_name(AffExpr& a) {
 bool close(const AffExpr& a_, const AffExpr& b_, double rtol, double atol) {
   AffExpr a = reduceAff(a_), b = reduceAff(b_);
   if (a.coeffs.size() != b.coeffs.size()) return false;
-  if (!close(a.constant, b.constant)) return false;
+  if (!close(a.constant, b.constant, rtol, atol)) return false;
   for (int i = 0; i < a.coeffs.size(); ++i) {
     if (a.vars[i].rep->name != b.vars[i].rep->name) return false;
     if (!close(a.coeffs[i], b.coeffs[i], rtol, atol)) return false;
