@@ -1,7 +1,7 @@
 #include "tracking_utils.hpp"
 
 #include "common.hpp"
-#include <array>
+#include <vector>
 #include <boost/multi_array.hpp>
 #include <boost/heap/fibonacci_heap.hpp>
 
@@ -30,7 +30,7 @@ void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const Ma
   boost::multi_array<Heap::handle_type, 2> handles(boost::extents[phi.rows()][phi.cols()]);
 
   const auto make_neighbors = [](int i, int j) {
-    return std::array<std::pair<int, int>, 4>({
+    return std::vector<std::pair<int, int> >({
       std::make_pair(i-1, j),
       std::make_pair(i+1, j),
       std::make_pair(i, j-1),
