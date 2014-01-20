@@ -3,6 +3,7 @@ import numpy as np
 # states are boolean 2d arrays. false = free space, 1 = object
 
 TRUNC_DIST = 10.
+OBS_PEAK_WEIGHT = 1.
 
 
 def smooth_by_edt(phi):
@@ -112,7 +113,7 @@ def depth_to_weights(depth, width=20):
   return f(out)
 
 
-def compute_obs_weight(obs_sdf, depth, weight_max):
+def compute_obs_weight(obs_sdf, depth, weight_max=OBS_PEAK_WEIGHT):
   # a = abs(obs_tsdf)
   # return np.where(a < trunc_val, (weight_max/trunc_val)*(trunc_val-a), 0.)
 

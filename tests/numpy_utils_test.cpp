@@ -1,8 +1,7 @@
 #include "grid_numpy_utils.hpp"
 
 #include "gtest/gtest.h"
-#include "expr.hpp" // for close()
-#include <iostream>
+
 TEST(NumpyUtilsTest, Grid) {
   Py_Initialize();
   util::PythonInit();

@@ -53,9 +53,6 @@ class Tracker(object):
     self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
     self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
 
-    # self.tps_cost = TPSCost(self.phi_vars)
-    # self.opt.add_cost(self.tps_cost, 1e-10)
-
     self.prev_weights = None
 
   def set_prev_phi_and_weights(self, prev_phi, weights):
@@ -83,7 +80,7 @@ class Tracker(object):
       return _optimize_once(init_state)
 
     curr_state, results, opt_results = init_state, [], []
-    for i in range(5):
+    for i in range(10):
       state, opt_result = _optimize_once(curr_state)
 
       flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)
@@ -137,6 +134,7 @@ def plot_state(state):
   plt.subplot(121)
   plt.title('phi')
   plt.axis('off')
+  # FIXME: this is wrong
   plt.imshow(np.flipud(state.phi.T), vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr').set_interpolation('nearest')
 
   plt.subplot(122, aspect='equal')
@@ -150,3 +148,80 @@ def plot_state(state):
   plot_flow(state.u_x, state.u_y)
 
   plt.show()
+
+
+def plot_problem_data(plt, TSDF_TRUNC, gp, state, tsdf, obs_weight, init_phi, init_weight, result, opt_result, next_phi, next_weight):
+
+  def plot_field(f, contour=False):
+    plt.imshow(f.T, aspect=1, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr', origin='lower')
+    if contour:
+      x = np.linspace(gp.xmin, gp.xmax, gp.nx)
+      y = np.linspace(gp.ymin, gp.ymax, gp.ny)
+      X, Y = np.meshgrid(x, y, indexing='ij')
+      plt.contour(X, Y, f, levels=[0])
+
+  def plot_u(u_x, u_y):
+    assert u_x.shape == u_y.shape
+    x = np.linspace(gp.xmin, gp.xmax, gp.nx)
+    y = np.linspace(gp.ymin, gp.ymax, gp.ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
+    from scipy.ndimage.interpolation import zoom
+    a = .3
+    plt.quiver(zoom(X, a), zoom(Y, a), zoom(u_x, a), zoom(u_y, a), angles='xy', scale_units='xy', scale=1.)
+
+  plt.clf()
+  import matplotlib
+  matplotlib.rcParams.update({'font.size': 8, 'image.origin': 'lower'})
+
+  plt.subplot(251)
+  plt.title('State')
+  plt.axis('off')
+  plt.imshow(state.T, aspect=1, origin='lower')
+
+  plt.subplot(252)
+  plt.axis('off')
+  plt.title('Observation TSDF')
+  plot_field(tsdf, contour=True)
+
+  plt.subplot(253)
+  plt.title('Observation weight')
+  plt.axis('off')
+  plt.imshow(obs_weight.T, cmap='binary', vmin=0, vmax=observation.OBS_PEAK_WEIGHT*10).set_interpolation('nearest')
+
+  plt.subplot(254)
+  plt.title('Prior TSDF')
+  plt.axis('off')
+  plot_field(init_phi, contour=True)
+
+  plt.subplot(255)
+  plt.title('Prior weight')
+  plt.axis('off')
+  plt.imshow(init_weight.T, vmin=0, vmax=observation.OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
+
+  plt.subplot(256)
+  plt.title('Log cost')
+  plt.plot(np.log(opt_result.cost_over_iters))
+
+  plt.subplot(257, aspect='equal')
+  plt.title('Flow')
+  plot_u(result.u_x, result.u_y)
+
+  plt.subplot(258)
+  plt.title('New TSDF')
+  plt.axis('off')
+  plot_field(result.phi, contour=True)
+
+  plt.subplot(259)
+  plt.title('New weight')
+  plt.axis('off')
+  plt.imshow(next_weight.T, vmin=0, vmax=observation.OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
+
+  plt.subplot(2,5,10)
+  plt.title('Smoothed new TSDF')
+  plt.axis('off')
+  plot_field(next_phi, contour=True)
+
+  # if args.output_dir is None:
+  #   plt.show()
+  # else:
+  #   plt.savefig('%s/plots_%d.png' % (args.output_dir, angle), bbox_inches='tight')

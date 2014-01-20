@@ -340,14 +340,8 @@ struct OptimizerImpl {
         x_changed = false;
       }
 
-      /////////////
-      // Eigen::EigenSolver<MatrixXd> es(jtj.toDense());
-      // std::cout << "eigenvalues: "<< es.eigenvalues() << std::endl;
-      /////////////
-
       lin_lhs = jtj + damping*scaling.transpose()*scaling;
       solver.compute(lin_lhs);
-
       delta_x = solver.solve(lin_rhs);
 
       // Check gradient convergence condition
@@ -361,7 +355,6 @@ struct OptimizerImpl {
         // Check delta_x (approx improvement) relative convergence condition
         delta_x_norm = (delta_x.cwiseQuotient(scaling.diagonal())).norm();
         double delta_x_norm_thresh = m_params.approx_improve_rel_tol*((result->x.cwiseQuotient(scaling.diagonal())).norm() + m_params.approx_improve_rel_tol);
-        LOG_INFO("dx norm thresh %3.10e", delta_x_norm_thresh);
         if (delta_x_norm <= delta_x_norm_thresh) {
           result->status = OPT_CONVERGED;
           LOG_INFO("converged because improvement was small (%.3e < %.3e)", delta_x_norm, delta_x_norm_thresh);
