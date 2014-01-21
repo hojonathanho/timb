@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--output_dir', default=None)
 parser.add_argument('--dump_dir', default=None)
 parser.add_argument('--input_dir', default=None)
+parser.add_argument('--do_not_smooth', action='store_true')
 args = parser.parse_args()
 
 np.set_printoptions(linewidth=1000)
@@ -234,7 +235,7 @@ def test_image():
     problem_data['obs_weight'] = obs_weight
 
     timb.Coeffs.flow_norm = 1e-6
-    timb.Coeffs.flow_rigidity = 1e-3
+    timb.Coeffs.flow_rigidity = 1e-1
     timb.Coeffs.observation = 1.
     timb.Coeffs.prior = 1.
     tracker = timb.Tracker(gp)
@@ -259,9 +260,12 @@ def test_image():
     next_weight = flowed_init_weight + obs_weight
     problem_data['new_weight'] = next_weight
 
-    smoother_ignore_region = (abs(result.phi) > TSDF_TRUNC/2) | (abs(next_weight) < 1e-2)
-    smoother_weights = np.where(smoother_ignore_region, 0, next_weight)
-    next_phi = timb.smooth(result.phi, smoother_weights)
+    if args.do_not_smooth:
+      next_phi = result.phi
+    else:
+      smoother_ignore_region = (abs(result.phi) > TSDF_TRUNC/2) | (abs(next_weight) < 1e-2)
+      smoother_weights = np.where(smoother_ignore_region, 0, next_weight)
+      next_phi = timb.smooth(result.phi, smoother_weights)
     next_phi = np.clip(next_phi, -TSDF_TRUNC, TSDF_TRUNC)
     problem_data['new_phi_smoothed'] = next_phi
 
