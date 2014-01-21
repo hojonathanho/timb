@@ -37,6 +37,7 @@ find_package(BLAS)
 find_package(LAPACK)
 # libraries packaged with this source tree
 set(EIGEN_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/eigen-3.2.0)
+set(CERES_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/ceres-solver-1.8.0/include)
 
 enable_testing()
 

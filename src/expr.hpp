@@ -7,11 +7,12 @@
 ///////// Symbolic quadratic expressions /////////
 
 struct VarRep {
-  VarRep(int _index, const std::string& _name, void* _creator) : index(_index), name(_name), removed(false), creator(_creator) {}
+  VarRep(int _index, const std::string& _name, void* _creator) : index(_index), name(_name), removed(false), creator(_creator), data(NULL) {}
   int index;
   std::string name;
   bool removed;
   void* creator;
+  void* data;
 };
 
 struct Var {

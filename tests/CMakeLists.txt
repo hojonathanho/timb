@@ -28,5 +28,9 @@ add_test(numpy_utils_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/numpy_utils_test)
 add_executable(test_optimize_2 test_optimize_2.cpp)
 target_link_libraries(test_optimize_2 timb ${GTEST_LIBRARIES})
 
-#add_executable(test_ceres test_ceres.cpp)
-#target_link_libraries(test_ceres ceres)
+
+include_directories(
+  ${CERES_INCLUDE_DIRS}
+)
+add_executable(test_ceres test_ceres.cpp)
+target_link_libraries(test_ceres ceres)
