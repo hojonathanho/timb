@@ -205,10 +205,8 @@ def generate_rot_flow(size, angle):
 
 def test_image():
   import matplotlib
-  matplotlib.use('Agg')
+  # matplotlib.use('Agg')
   import matplotlib.pyplot as plt
-
-  TSDF_TRUNC = observation.TRUNC_DIST
 
   SIZE = 100
   FIRST_OBS_EXTRA_WEIGHT = 2
@@ -219,57 +217,25 @@ def test_image():
   WORLD_MIN = (0., 0.)
   WORLD_MAX = (SIZE-1., SIZE-1.)
   gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
+  tracker_params = timb.TrackerParams()
 
   def run(obs_num, img, init_phi, init_weight):
-    problem_data = {}
-
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    problem_data['state'] = state
-    problem_data['init_phi'] = init_phi
-    problem_data['init_weight'] = init_weight
-
-    tsdf, sdf, depth = observation.state_to_tsdf(state, return_all=True)
-    problem_data['obs_tsdf'], problem_data['obs_sdf'], problem_data['obs_depth'] = tsdf, sdf, depth
-
-    obs_weight = observation.compute_obs_weight(sdf, depth)
-    problem_data['obs_weight'] = obs_weight
-
-    timb.Coeffs.flow_norm = 1e-6
-    timb.Coeffs.flow_rigidity = 1e-1
-    timb.Coeffs.observation = 1.
-    timb.Coeffs.prior = 1.
-    tracker = timb.Tracker(gp)
-    tracker.opt.params().check_linearizations = False
-    tracker.opt.params().keep_results_over_iterations = False
-    tracker.opt.params().max_iter = 5
-    tracker.opt.params().approx_improve_rel_tol = 1e-8
-    tracker.set_observation(tsdf, obs_weight)
-    tracker.set_prev_phi_and_weights(init_phi, init_weight)
-    # initialization: previous phi, zero flow
-    init_u = np.zeros(init_phi.shape + (2,))
-    # if obs_num != 0: init_u = generate_rot_flow(SIZE, INCR_ANGLE*np.pi/180) # optimization starting point
-    result, opt_result = tracker.optimize(timb.State(gp, init_phi, init_u[:,:,0], init_u[:,:,1]))
-
-    problem_data['cost_over_iters'] = opt_result.cost_over_iters
-
-    problem_data['u_x'], problem_data['u_y'] = result.u_x, result.u_y
-
-    problem_data['new_phi'] = result.phi
-
-    flowed_init_weight = timb.apply_flow(gp, init_weight, result.u_x, result.u_y)
-    next_weight = flowed_init_weight + obs_weight
-    problem_data['new_weight'] = next_weight
-
-    if args.do_not_smooth:
-      next_phi = result.phi
-    else:
-      smoother_ignore_region = (abs(result.phi) > TSDF_TRUNC/2) | (abs(next_weight) < 1e-2)
-      smoother_weights = np.where(smoother_ignore_region, 0, next_weight)
-      next_phi = timb.smooth(result.phi, smoother_weights)
-    next_phi = np.clip(next_phi, -TSDF_TRUNC, TSDF_TRUNC)
-    problem_data['new_phi_smoothed'] = next_phi
-
-    timb.plot_problem_data(plt, TSDF_TRUNC, gp, state, tsdf, obs_weight, init_phi, init_weight, result, opt_result, next_phi, next_weight)
+    new_phi, new_weight, problem_data = timb.run_one_step(gp, tracker_params, state, init_phi, init_weight, return_full=True)
+    timb.plot_problem_data(
+      plt,
+      tracker_params.tsdf_trunc_dist,
+      gp,
+      state,
+      problem_data['obs_tsdf'],
+      problem_data['obs_weight'],
+      problem_data['init_phi'],
+      problem_data['init_weight'],
+      problem_data['result'],
+      problem_data['opt_result'],
+      new_phi,
+      new_weight
+    )
 
     if args.output_dir is None:
       plt.show()
@@ -283,10 +249,9 @@ def test_image():
         cPickle.dump(problem_data, f)
       print 'wrote to', path
 
-    return next_phi, next_weight
+    return new_phi, new_weight
 
-
-  orig_phi = np.empty((SIZE, SIZE)); orig_phi.fill(TSDF_TRUNC)
+  orig_phi = np.empty((SIZE, SIZE)); orig_phi.fill(tracker_params.tsdf_trunc_dist)
   orig_omega = np.zeros((SIZE, SIZE));# orig_omega.fill(.0001)
 
   curr_phi, curr_omega = orig_phi, orig_omega

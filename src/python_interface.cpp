@@ -100,7 +100,7 @@ struct ExampleCost : public CostFunc {
 typedef boost::shared_ptr<ExampleCost> ExampleCostPtr;
 
 
-BOOST_PYTHON_MODULE(ctimbpy) {
+BOOST_PYTHON_MODULE(ctimb) {
   util::LoggingInit();
   util::PythonInit();
 

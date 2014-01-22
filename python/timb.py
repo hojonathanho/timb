@@ -1,13 +1,33 @@
-from ctimbpy import *
+from ctimb import *
 
 import numpy as np
 import observation
 
-class Coeffs(object):
-  flow_norm = 1e-2
-  flow_rigidity = 1.
-  observation = 1.
-  agreement = 1.
+
+class TrackerParams(object):
+  def __init__(self):
+    # Optimization parameters
+    self.flow_norm_coeff = 1e-6
+    self.flow_rigidity_coeff = 1.
+    self.observation_coeff = 1.
+    self.agreement_coeff = 1.
+
+    self.reweighting_iters = 5
+    self.max_innner_iters = 10
+
+    # Observation parameters
+    self.tsdf_trunc_dist = 10.
+    self.sensor_mode = 'accurate'
+
+    self.obs_weight_epsilon = 0.
+    self.obs_weight_delta = 5.
+    self.obs_weight_filter_radius = 20
+
+    # Smoothing parameters
+    self.enable_smoothing = True
+    self.smoother_phi_ignore_thresh = self.tsdf_trunc_dist / 2.
+    self.smoother_weight_ignore_thresh = 1e-2
+
 
 
 class State(object):
@@ -28,10 +48,10 @@ class State(object):
     return np.r_[self.phi.ravel(), self.u_x.ravel(), self.u_y.ravel()]
 
 
-class Tracker(object):
-  def __init__(self, grid_params, use_iterative_reweighting=True):
-    self.gp = grid_params
-    self.use_iterative_reweighting = use_iterative_reweighting
+class TrackingOptimizationProblem(object):
+  def __init__(self, grid_params, params):
+    assert isinstance(grid_params, GridParams) and isinstance(params, TrackerParams)
+    self.gp, self.params = grid_params, params
 
     self.opt = Optimizer()
     self.phi_vars = make_var_field(self.opt, 'phi', self.gp)
@@ -39,19 +59,16 @@ class Tracker(object):
     self.u_y_vars = make_var_field(self.opt, 'u_y', self.gp)
 
     self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
-    self.opt.add_cost(self.flow_norm_cost, Coeffs.flow_norm)
+    self.opt.add_cost(self.flow_norm_cost, self.params.flow_norm_coeff)
 
     self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
-    self.opt.add_cost(self.flow_rigidity_cost, Coeffs.flow_rigidity)
-
-    self.observation_zc_cost = ObservationZeroCrossingCost(self.phi_vars)
-    self.opt.add_cost(self.observation_zc_cost, 0)
+    self.opt.add_cost(self.flow_rigidity_cost, self.params.flow_rigidity_coeff)
 
     self.observation_cost = ObservationCost(self.phi_vars)
-    self.opt.add_cost(self.observation_cost, Coeffs.observation)
+    self.opt.add_cost(self.observation_cost, self.params.observation_coeff)
 
     self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
-    self.opt.add_cost(self.agreement_cost, Coeffs.agreement)
+    self.opt.add_cost(self.agreement_cost, self.params.agreement_coeff)
 
     self.prev_weights = None
 
@@ -61,26 +78,19 @@ class Tracker(object):
 
   def set_observation(self, obs, weights):
     self.observation_cost.set_observation(obs, weights)
-    self.opt.set_cost_coeff(self.observation_cost, Coeffs.observation)
-    self.opt.set_cost_coeff(self.observation_zc_cost, 0)
-
-  # def set_observation_zc(self, pts):
-  #   self.observation_zc_cost.set_zero_points(pts)
-  #   self.opt.set_cost_coeff(self.observation_zc_cost, Coeffs.observation)
-  #   self.opt.set_cost_coeff(self.observation_cost, 0)
 
   def optimize(self, init_state):
-
     def _optimize_once(state):
       opt_result = self.opt.optimize(state.pack())
       result = State.FromPacked(self.gp, opt_result.x)
       return result, opt_result
 
-    if not self.use_iterative_reweighting:
+    assert self.params.reweighting_iters >= 1
+    if self.params.reweighting_iters == 1:
       return _optimize_once(init_state)
 
     curr_state, results, opt_results = init_state, [], []
-    for i in range(10):
+    for i in range(self.params.reweighting_iters):
       state, opt_result = _optimize_once(curr_state)
 
       flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)
@@ -91,6 +101,81 @@ class Tracker(object):
       curr_state = state
 
     return results[-1], opt_results[-1]
+
+
+def run_one_step(grid_params, tracker_params, state, init_phi, init_weight, return_full=False):
+  assert isinstance(tracker_params, TrackerParams)
+
+  if return_full:
+    problem_data = {}
+    problem_data['state'] = state
+    problem_data['init_phi'] = init_phi
+    problem_data['init_weight'] = init_weight
+
+  # Perform observation
+  tsdf, sdf, depth = observation.state_to_tsdf(
+    state,
+    trunc_dist=tracker_params.tsdf_trunc_dist,
+    mode=tracker_params.sensor_mode,
+    return_all=True
+  )
+  if return_full:
+    problem_data['obs_tsdf'], problem_data['obs_sdf'], problem_data['obs_depth'] = tsdf, sdf, depth
+
+  # Calculate observation weight
+  obs_weight = observation.compute_obs_weight(
+    sdf,
+    depth,
+    epsilon=tracker_params.obs_weight_epsilon,
+    delta=tracker_params.obs_weight_delta,
+    filter_radius=tracker_params.obs_weight_filter_radius
+  )
+  if return_full:
+    problem_data['obs_weight'] = obs_weight
+
+  # Set up tracking problem
+  tracker = TrackingOptimizationProblem(grid_params, tracker_params)
+  tracker.opt.params().check_linearizations = False
+  tracker.opt.params().keep_results_over_iterations = False
+  tracker.opt.params().max_iter = tracker_params.max_innner_iters
+  tracker.opt.params().approx_improve_rel_tol = 1e-8
+
+  tracker.set_observation(tsdf, obs_weight)
+  tracker.set_prev_phi_and_weights(init_phi, init_weight)
+
+  # Run optimization
+  # initialization: previous phi, zero flow
+  init_u = np.zeros(init_phi.shape + (2,))
+  init_state = State(grid_params, init_phi, init_u[:,:,0], init_u[:,:,1])
+  result, opt_result = tracker.optimize(init_state)
+  if return_full:
+    problem_data['result'], problem_data['opt_result'] = result, opt_result
+
+  # Flow previous weight to get new weight
+  flowed_init_weight = apply_flow(grid_params, init_weight, result.u_x, result.u_y)
+  new_weight = flowed_init_weight + obs_weight
+  if return_full:
+    problem_data['new_weight'] = new_weight
+
+  # Smooth next phi
+  if tracker_params.enable_smoothing:
+    smoother_ignore_region = \
+      (abs(result.phi) > tracker_params.smoother_phi_ignore_thresh) | \
+      (new_weight < tracker_params.smoother_weight_ignore_thresh)
+    smoother_weights = np.where(smoother_ignore_region, 0., new_weight)
+    new_phi = smooth(result.phi, smoother_weights)
+  else:
+    new_phi = result.phi
+
+  # Re-truncate next phi
+  new_phi = np.clip(new_phi, -tracker_params.tsdf_trunc_dist, tracker_params.tsdf_trunc_dist)
+  if return_full:
+    problem_data['new_phi_smoothed'] = new_phi
+
+  if return_full:
+    return new_phi, new_weight, problem_data
+  return new_phi, new_weight
+
 
 def smooth(phi, weights, mode='tps'):
   # from timb_skfmm import distance
@@ -122,7 +207,8 @@ def smooth(phi, weights, mode='tps'):
   return new_phi
 
 
-# Utility functions
+
+########## Utility functions ##########
 
 def plot_state(state):
   import matplotlib
@@ -150,10 +236,10 @@ def plot_state(state):
   plt.show()
 
 
-def plot_problem_data(plt, TSDF_TRUNC, gp, state, tsdf, obs_weight, init_phi, init_weight, result, opt_result, next_phi, next_weight):
+def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tsdf, obs_weight, init_phi, init_weight, result, opt_result, next_phi, next_weight):
 
   def plot_field(f, contour=False):
-    plt.imshow(f.T, aspect=1, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr', origin='lower')
+    plt.imshow(f.T, aspect=1, vmin=-tsdf_trunc_dist, vmax=tsdf_trunc_dist, cmap='bwr', origin='lower')
     if contour:
       x = np.linspace(gp.xmin, gp.xmax, gp.nx)
       y = np.linspace(gp.ymin, gp.ymax, gp.ny)
@@ -220,8 +306,3 @@ def plot_problem_data(plt, TSDF_TRUNC, gp, state, tsdf, obs_weight, init_phi, in
   plt.title('Smoothed new TSDF')
   plt.axis('off')
   plot_field(next_phi, contour=True)
-
-  # if args.output_dir is None:
-  #   plt.show()
-  # else:
-  #   plt.savefig('%s/plots_%d.png' % (args.output_dir, angle), bbox_inches='tight')

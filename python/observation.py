@@ -1,18 +1,11 @@
 import numpy as np
+import skfmm
 
 # states are boolean 2d arrays. false = free space, 1 = object
 
-TRUNC_DIST = 10.
 OBS_PEAK_WEIGHT = 1.
 
-
-def smooth_by_edt(phi):
-  import skfmm
-  d = skfmm.distance(phi)
-  return np.clip(d, -TRUNC_DIST, TRUNC_DIST)
-
-
-def state_to_pixel_depth(state):
+def _state_to_pixel_depth(state):
   '''
   State is a NxM boolean array. True indicates the presence of a surface.
   Returns an array of length N that contains the distance from the y=0 axis to the surface.
@@ -28,10 +21,10 @@ def state_to_pixel_depth(state):
   return depth
 
 
-def state_to_visibility_mask(state, depth=None):
+def _state_to_visibility_mask(state, depth=None):
   # make mask where visible surface is zero
   if depth is None:
-    depth = state_to_pixel_depth(state)
+    depth = _state_to_pixel_depth(state)
   mask = np.ones_like(state, dtype=float)
   for i in range(state.shape[0]):
     d = depth[i]
@@ -46,20 +39,38 @@ def state_to_visibility_mask(state, depth=None):
   return mask
 
 
-def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
+def _depth_to_weights(depth, filter_radius):
+  '''
+  Computes weights for a depth image
+  '''
+
+  has_measurement = (depth != np.inf).astype(float)
+  filt = np.ones(2*filter_radius + 1); filt /= filt.sum()
+  out = np.convolve(has_measurement, filt, 'same')
+
+  def f(x):
+    '''maps [.5, 1] to [0, 1], differentiable at boundary'''
+    y = .5*np.sin(2*np.pi*(x - .75)) + .5
+    y[x < .5] = 0.
+    y[x > 1.] = 1.
+    return y
+
+  return f(out)
+
+
+def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
   '''
   '''
 
   assert mode in ['accurate', 'projective']
 
   # observe from the left
-  depth = state_to_pixel_depth(state)
+  depth = _state_to_pixel_depth(state)
 
   if mode == 'accurate':
     # make mask where visible surface is zero
-    mask = state_to_visibility_mask(state, depth)
+    mask = _state_to_visibility_mask(state, depth)
     # fill to make a SDF
-    import skfmm
     sdf = skfmm.distance(mask)
     for i in range(state.shape[0]):
       if depth[i] == np.inf:
@@ -85,56 +96,32 @@ def state_to_tsdf(state, trunc=TRUNC_DIST, mode='accurate', return_all=False):
   else:
     raise NotImplementedError
 
-  tsdf = np.clip(sdf, -trunc, trunc)
+  tsdf = np.clip(sdf, -trunc_dist, trunc_dist)
 
   if return_all: return tsdf, sdf, depth
   return tsdf
 
 
-def depth_to_weights(depth, width=20):
-  '''
-  Computes weights for a depth image
-  '''
-
-  has_measurement = (depth != np.inf).astype(float)
-  filt = np.ones(2*width + 1); filt /= filt.sum()
-  out = np.convolve(has_measurement, filt, 'same')
-  # out = gaussian_filter(has_measurement, 5, mode='nearest')
-  print np.c_[has_measurement, out]
-
-  def f(x):
-    '''maps [.5, 1] to [0, 1], differentiable at boundary'''
-    y = .5*np.sin(2*np.pi*(x - .75)) + .5
-    y[x < .5] = 0.
-    y[x > 1.] = 1.
-    return y
-
-  # return np.clip(out - .5, 0, 1) * 2, out
-  return f(out)
-
-
-def compute_obs_weight(obs_sdf, depth, weight_max=OBS_PEAK_WEIGHT):
+def compute_obs_weight(obs_sdf, depth, epsilon, delta, filter_radius):
   # a = abs(obs_tsdf)
-  # return np.where(a < trunc_val, (weight_max/trunc_val)*(trunc_val-a), 0.)
+  # return np.where(a < trunc_val, (OBS_PEAK_WEIGHT/trunc_val)*(trunc_val-a), 0.)
 
   # linear weight (b) in Bylow et al 2013
   # epsilon, delta = 5, 10
-  epsilon, delta = 0, 5
+  # epsilon, delta = 0, 5
   assert delta > epsilon
-  w = np.where(obs_sdf >= -epsilon, weight_max, obs_sdf)
-  w = np.where((obs_sdf <= -epsilon) & (obs_sdf >= -delta), (weight_max/(delta-epsilon))*(obs_sdf + delta), w)
+  w = np.where(obs_sdf >= -epsilon, OBS_PEAK_WEIGHT, obs_sdf)
+  w = np.where((obs_sdf <= -epsilon) & (obs_sdf >= -delta), (OBS_PEAK_WEIGHT/(delta-epsilon))*(obs_sdf + delta), w)
   w = np.where(obs_sdf < -delta, 0, w)
   w = np.where(np.isfinite(obs_sdf), w, 0) # zero precision where we get inf/no depth measurement
 
-  dw = depth_to_weights(depth)
-  # print dw.max(), dw.min()
-  # import matplotlib; import matplotlib.pyplot as plt
-  # plt.plot(dw)
-  # plt.show()
+  dw = _depth_to_weights(depth, filter_radius)
   w *= dw[:,None]
 
   return w
 
+
+########## TESTS ##########
 
 def test_simple():
   import matplotlib.pyplot as plt
@@ -228,13 +215,13 @@ def test_rotate():
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr')
 
-    mask = state_to_visibility_mask(state)
+    mask = _state_to_visibility_mask(state)
     plt.subplot(234)
     plt.axis('off')
     plt.title('Mask')
     plt.imshow(mask)
 
-    depth_weight = depth_to_weights(depth)
+    depth_weight = _depth_to_weights(depth)
     plt.subplot(235)
     plt.title('Depth weight')
     z = np.ones_like(mask, dtype=float)

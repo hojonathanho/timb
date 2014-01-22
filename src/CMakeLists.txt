@@ -28,8 +28,8 @@ target_link_libraries(timb ${CHOLMOD_LIBRARIES} ${BLAS_LIBRARIES})
 # add_executable(test_optimize_2 test_optimize_2.cpp)
 # target_link_libraries(test_optimize_2 timb)
 
-boost_python_module(ctimbpy python_interface.cpp)
-target_link_libraries(ctimbpy timb)
+boost_python_module(ctimb python_interface.cpp)
+target_link_libraries(ctimb timb)
 
 #add_executable(test_ceres test_ceres.cpp)
 #target_link_libraries(test_ceres ceres)
