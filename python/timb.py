@@ -1,4 +1,27 @@
+import ctimb
 from ctimb import *
+
+def isEnumType(o):
+    return isinstance(o, type) and issubclass(o,int) and not (o is int)
+
+def _tuple2enum(enum, value):
+    enum = getattr(ctimb, enum)
+    e = enum.values.get(value,None)
+    if e is None:
+        e = enum(value)
+    return e
+
+def _registerEnumPicklers(): 
+    from copy_reg import constructor, pickle
+    def reduce_enum(e):
+        enum = type(e).__name__.split('.')[-1]
+        return ( _tuple2enum, ( enum, int(e) ) )
+    constructor( _tuple2enum)
+    for e in [ e for e in vars(ctimb).itervalues() if isEnumType(e) ]:
+        pickle(e, reduce_enum)
+
+_registerEnumPicklers()
+
 
 import numpy as np
 import observation
@@ -82,7 +105,7 @@ class TrackingOptimizationProblem(object):
   def optimize(self, init_state):
     def _optimize_once(state):
       opt_result = self.opt.optimize(state.pack())
-      result = State.FromPacked(self.gp, opt_result.x)
+      result = State.FromPacked(self.gp, opt_result['x'])
       return result, opt_result
 
     assert self.params.reweighting_iters >= 1
@@ -204,7 +227,7 @@ def smooth(phi, weights, mode='tps'):
     raise NotImplementedError
 
   result = opt.optimize(phi.ravel())
-  new_phi = result.x.reshape(phi.shape)
+  new_phi = result['x'].reshape(phi.shape)
   return new_phi
 
 
@@ -287,7 +310,7 @@ def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tsdf, obs_weight, init_ph
 
   plt.subplot(256)
   plt.title('Log cost')
-  plt.plot(np.log(opt_result.cost_over_iters))
+  plt.plot(np.log(opt_result['cost_over_iters']))
 
   plt.subplot(257, aspect='equal')
   plt.title('Flow')
