@@ -103,35 +103,36 @@ class TrackingOptimizationProblem(object):
     return results[-1], opt_results[-1]
 
 
-def run_one_step(grid_params, tracker_params, state, init_phi, init_weight, return_full=False):
+def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, init_phi, init_weight, return_full=False):
   assert isinstance(tracker_params, TrackerParams)
 
   if return_full:
     problem_data = {}
-    problem_data['state'] = state
+    problem_data['obs_tsdf'] = obs_tsdf
+    problem_data['obs_weight'] = obs_weight
     problem_data['init_phi'] = init_phi
     problem_data['init_weight'] = init_weight
 
-  # Perform observation
-  tsdf, sdf, depth = observation.state_to_tsdf(
-    state,
-    trunc_dist=tracker_params.tsdf_trunc_dist,
-    mode=tracker_params.sensor_mode,
-    return_all=True
-  )
-  if return_full:
-    problem_data['obs_tsdf'], problem_data['obs_sdf'], problem_data['obs_depth'] = tsdf, sdf, depth
+  # # Perform observation
+  # tsdf, sdf, depth = observation.state_to_tsdf(
+  #   state,
+  #   trunc_dist=tracker_params.tsdf_trunc_dist,
+  #   mode=tracker_params.sensor_mode,
+  #   return_all=True
+  # )
+  # if return_full:
+  #   problem_data['obs_tsdf'], problem_data['obs_sdf'], problem_data['obs_depth'] = tsdf, sdf, depth
 
-  # Calculate observation weight
-  obs_weight = observation.compute_obs_weight(
-    sdf,
-    depth,
-    epsilon=tracker_params.obs_weight_epsilon,
-    delta=tracker_params.obs_weight_delta,
-    filter_radius=tracker_params.obs_weight_filter_radius
-  )
-  if return_full:
-    problem_data['obs_weight'] = obs_weight
+  # # Calculate observation weight
+  # obs_weight = observation.compute_obs_weight(
+  #   sdf,
+  #   depth,
+  #   epsilon=tracker_params.obs_weight_epsilon,
+  #   delta=tracker_params.obs_weight_delta,
+  #   filter_radius=tracker_params.obs_weight_filter_radius
+  # )
+  # if return_full:
+  #   problem_data['obs_weight'] = obs_weight
 
   # Set up tracking problem
   tracker = TrackingOptimizationProblem(grid_params, tracker_params)
@@ -140,7 +141,7 @@ def run_one_step(grid_params, tracker_params, state, init_phi, init_weight, retu
   tracker.opt.params().max_iter = tracker_params.max_innner_iters
   tracker.opt.params().approx_improve_rel_tol = 1e-8
 
-  tracker.set_observation(tsdf, obs_weight)
+  tracker.set_observation(obs_tsdf, obs_weight)
   tracker.set_prev_phi_and_weights(init_phi, init_weight)
 
   # Run optimization

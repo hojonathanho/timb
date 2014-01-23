@@ -221,20 +221,24 @@ def test_image():
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    new_phi, new_weight, problem_data = timb.run_one_step(gp, tracker_params, state, init_phi, init_weight, return_full=True)
+    tsdf, sdf, depth, weight = observation.observation_from_full_img(img, tracker_params)
+
+    new_phi, new_weight, problem_data = timb.run_one_step(
+      gp, tracker_params,
+      tsdf, weight,
+      init_phi, init_weight,
+      return_full=True
+    )
+  
     timb.plot_problem_data(
       plt,
       tracker_params.tsdf_trunc_dist,
       gp,
       state,
-      problem_data['obs_tsdf'],
-      problem_data['obs_weight'],
-      problem_data['init_phi'],
-      problem_data['init_weight'],
-      problem_data['result'],
-      problem_data['opt_result'],
-      new_phi,
-      new_weight
+      tsdf, weight,
+      init_phi, init_weight,
+      problem_data['result'], problem_data['opt_result'],
+      new_phi, new_weight
     )
 
     if args.output_dir is None:

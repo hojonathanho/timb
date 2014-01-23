@@ -121,6 +121,27 @@ def compute_obs_weight(obs_sdf, depth, epsilon, delta, filter_radius):
   return w
 
 
+def observation_from_full_img(img, tracker_params):
+  state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
+
+  tsdf, sdf, depth = state_to_tsdf(
+    state,
+    trunc_dist=tracker_params.tsdf_trunc_dist,
+    mode=tracker_params.sensor_mode,
+    return_all=True
+  )
+
+  weight = compute_obs_weight(
+    sdf,
+    depth,
+    epsilon=tracker_params.obs_weight_epsilon,
+    delta=tracker_params.obs_weight_delta,
+    filter_radius=tracker_params.obs_weight_filter_radius
+  )
+
+  return tsdf, sdf, depth, weight
+
+
 ########## TESTS ##########
 
 def test_simple():
