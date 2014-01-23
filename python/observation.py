@@ -39,23 +39,51 @@ def _state_to_visibility_mask(state, depth=None):
   return mask
 
 
-def _depth_to_weights(depth, filter_radius):
+def _depth_to_weights(depth, trunc_dist, filter_radius):
   '''
   Computes weights for a depth image
   '''
 
+  # Downweight around regions with no measurements
   has_measurement = (depth != np.inf).astype(float)
+
   filt = np.ones(2*filter_radius + 1); filt /= filt.sum()
   out = np.convolve(has_measurement, filt, 'same')
-
   def f(x):
     '''maps [.5, 1] to [0, 1], differentiable at boundary'''
     y = .5*np.sin(2*np.pi*(x - .75)) + .5
     y[x < .5] = 0.
     y[x > 1.] = 1.
     return y
+  w = f(out)
 
-  return f(out)
+  # Set weight to 1 everywhere TSDF_TRUNC away from the object
+  first = 0
+  for i in range(len(depth)):
+    if depth[i] != np.inf:
+      first = i
+      break
+  w[:max(0, first-trunc_dist)] = 1
+
+  last = len(depth) - 1
+  for i in range(len(depth)):
+    if depth[len(depth)-i-1] != np.inf:
+      last = len(depth)-i-1
+      break
+  w[min(last+trunc_dist, len(depth)-1):] = 1
+
+  # Downweight around depth discontinuities
+  discont_radius = int(filter_radius/4.) # FIXME: ARBITRARY
+  w2 = np.ones_like(w)
+  grad = np.convolve(depth[first:last+1], [.5, -.5], 'same')[1:-1]
+  asdf = np.r_[np.linspace(1, 0, discont_radius), 0, np.linspace(0, 1, discont_radius)]
+  for i in range(len(grad)):
+    if abs(grad[i]) > 3:
+      offset = first + i + 1
+      w2[offset-discont_radius:offset+discont_radius+1] *= asdf
+  w = np.minimum(w, w2)
+
+  return w
 
 
 def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
@@ -80,6 +108,7 @@ def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
       d = depth[i]
       if d != np.inf:
         sdf[i,d+1:] *= -1
+        # sdf[i,d+1+trunc_dist:] = -trunc_dist
 
   elif mode == 'projective':
     # projective point-to-point metric
@@ -102,7 +131,7 @@ def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
   return tsdf
 
 
-def compute_obs_weight(obs_sdf, depth, epsilon, delta, filter_radius):
+def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius):
   # a = abs(obs_tsdf)
   # return np.where(a < trunc_val, (OBS_PEAK_WEIGHT/trunc_val)*(trunc_val-a), 0.)
 
@@ -115,7 +144,7 @@ def compute_obs_weight(obs_sdf, depth, epsilon, delta, filter_radius):
   w = np.where(obs_sdf < -delta, 0, w)
   w = np.where(np.isfinite(obs_sdf), w, 0) # zero precision where we get inf/no depth measurement
 
-  dw = _depth_to_weights(depth, filter_radius)
+  dw = _depth_to_weights(depth, trunc_dist, filter_radius)
   w *= dw[:,None]
 
   return w
@@ -134,6 +163,7 @@ def observation_from_full_img(img, tracker_params):
   weight = compute_obs_weight(
     sdf,
     depth,
+    tracker_params.tsdf_trunc_dist,
     epsilon=tracker_params.obs_weight_epsilon,
     delta=tracker_params.obs_weight_delta,
     filter_radius=tracker_params.obs_weight_filter_radius
@@ -197,23 +227,9 @@ def test_rotate():
   import matplotlib
   import matplotlib.pyplot as plt
 
-  def make_square_img(size):
-    a = np.empty((size, size), dtype=np.uint8); a.fill(255)
-    a[int(size/4.),int(size/4.):-int(size/4.)] = 0
-    a[int(size/4.):-int(size/4.),int(size/4.)] = 0
-    a[int(size/4.):-int(size/4.),-int(size/4.)] = 0
-    a[-int(size/4.),int(size/4.):-int(size/4.)+1] = 0
-    img = np.empty((size, size, 3), dtype=np.uint8)
-    for i in range(3):
-      img[:,:,i] = a
-    return img
-
-  orig_img = make_square_img(200)
-
-  def run(angle):
+  def run(img):
     plt.clf()
     matplotlib.rcParams.update({'font.size': 8})
-    img = ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
 
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
     plt.subplot(231)
@@ -242,7 +258,7 @@ def test_rotate():
     plt.title('Mask')
     plt.imshow(mask)
 
-    depth_weight = _depth_to_weights(depth, 20)
+    depth_weight = _depth_to_weights(depth, TSDF_TRUNC, 20)
     plt.subplot(235)
     plt.title('Depth weight')
     z = np.ones_like(mask, dtype=float)
@@ -251,11 +267,40 @@ def test_rotate():
 
     plt.show()
 
-  START_ANGLE = 0
-  INCR_ANGLE = 5
-  for i in range(75):
-    angle = START_ANGLE + i*INCR_ANGLE
-    run(angle)
+  def gen_img_sequence():
+    def make_square_img(size):
+      a = np.empty((size, size), dtype=np.uint8); a.fill(255)
+      a[int(size/4.),int(size/4.):-int(size/4.)] = 0
+      a[int(size/4.):-int(size/4.),int(size/4.)] = 0
+      a[int(size/4.):-int(size/4.),-int(size/4.)] = 0
+      a[-int(size/4.),int(size/4.):-int(size/4.)+1] = 0
+      img = np.empty((size, size, 3), dtype=np.uint8)
+      for i in range(3):
+        img[:,:,i] = a
+      return img
+
+    START_ANGLE = 0
+    INCR_ANGLE = 5
+    orig_img = make_square_img(200)
+    for i in range(75):
+      angle = START_ANGLE + i*INCR_ANGLE
+      img = ndimage.interpolation.rotate(orig_img, angle, cval=255, order=1, reshape=False)
+      yield img
+
+
+  def gen_img_sequence2():
+    import os
+    input_dir = '/Users/jonathan/Dropbox/research/tracking/data/in/simple_bend'
+    files = [(input_dir + '/' + f) for f in os.listdir(input_dir) if os.path.isfile(input_dir + '/' + f)]
+    for f in sorted(files):
+      print f
+      yield np.transpose(ndimage.imread(f), (1, 0, 2))
+
+  i = 0
+  for img in gen_img_sequence2():
+    i += 1
+    if i < 10: continue
+    run(img)
 
 
 if __name__ == '__main__':
