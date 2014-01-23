@@ -206,7 +206,7 @@ def generate_rot_flow(size, angle):
 
 def test_image():
   import matplotlib
-  # matplotlib.use('Agg')
+  matplotlib.use('Agg')
   import matplotlib.pyplot as plt
 
   SIZE = 100
@@ -223,6 +223,8 @@ def test_image():
   tracker_params.flow_rigidity_coeff = 1e-1
   tracker_params.observation_coeff = 1.
   tracker_params.agreement_coeff = 1.
+  tracker_params.reweighting_iters = 10
+  tracker_params.max_innner_iters = 20
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
@@ -255,7 +257,7 @@ def test_image():
       import cPickle
       path = '%s/dump_%d.pkl' % (args.dump_dir, obs_num)
       with open(path, 'w') as f:
-        cPickle.dump(problem_data, f)
+        cPickle.dump(problem_data, f, cPickle.HIGHEST_PROTOCOL)
       print 'wrote to', path
 
     return new_phi, new_weight
@@ -271,23 +273,23 @@ def test_image():
     sdf = ndimage.morphology.distance_transform_edt(~state)
     sdf[img[:,:,0] != 255] *= -1.
     orig_phi = np.clip(sdf, -tracker_params.tsdf_trunc_dist, tracker_params.tsdf_trunc_dist)
-
-
-    import matplotlib.pyplot as plt
-    def plot_field(f, contour=False):
-      plt.imshow(f.T, aspect=1, vmin=-tracker_params.tsdf_trunc_dist, vmax=tracker_params.tsdf_trunc_dist, cmap='bwr', origin='lower')
-      if contour:
-        x = np.linspace(gp.xmin, gp.xmax, gp.nx)
-        y = np.linspace(gp.ymin, gp.ymax, gp.ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
-        plt.contour(X, Y, f, levels=[0])
-    plt.subplot(121)
-    plot_field(orig_phi, contour=True)
-    plt.subplot(122)
-    tsdf = observation.state_to_tsdf(state, tracker_params.tsdf_trunc_dist)
-    plot_field(tsdf, contour=True)
-    plt.show()
     orig_omega.fill(1)
+
+    # import matplotlib.pyplot as plt
+    # def plot_field(f, contour=False):
+    #   plt.imshow(f.T, aspect=1, vmin=-tracker_params.tsdf_trunc_dist, vmax=tracker_params.tsdf_trunc_dist, cmap='bwr', origin='lower')
+    #   if contour:
+    #     x = np.linspace(gp.xmin, gp.xmax, gp.nx)
+    #     y = np.linspace(gp.ymin, gp.ymax, gp.ny)
+    #     X, Y = np.meshgrid(x, y, indexing='ij')
+    #     plt.contour(X, Y, f, levels=[0])
+    # plt.subplot(121)
+    # plot_field(orig_phi, contour=True)
+    # plt.subplot(122)
+    # tsdf = observation.state_to_tsdf(state, tracker_params.tsdf_trunc_dist)
+    # plot_field(tsdf, contour=True)
+    # plt.show()
+
 
   curr_phi, curr_omega = orig_phi, orig_omega
 

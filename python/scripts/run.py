@@ -52,7 +52,7 @@ def main():
   output_filename = os.path.join(args.output_dir, uuid.uuid4() + '.log.pkl')
   print 'Writing to', output_filename
   with open(output_filename, 'w') as f:
-    cPickle.dump(ex_log, f)
+    cPickle.dump(ex_log, f, cPickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
   main()

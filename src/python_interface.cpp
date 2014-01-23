@@ -12,27 +12,52 @@
 
 namespace py = boost::python;
 
-struct PyOptResult : public OptResult {
-  py::object py_x;
-  py::list py_x_over_iters;
-  py::object py_cost_detail;
-  py::object py_cost_over_iters;
-  PyOptResult(OptResultPtr o) {
-    status = o->status;
-    py_x = util::toNdarray1(o->x.data(), o->x.size());
-    for (const VectorXd& x : o->x_over_iters) {
-      py_x_over_iters.append(util::toNdarray1(x.data(), x.size()));
-    }
-    cost = o->cost;
-    py_cost_detail = util::toNdarray1(o->cost_detail.data(), o->cost_detail.size());
-    py_cost_over_iters = util::toPyList(o->cost_over_iters);
-    n_func_evals = o->n_func_evals;
-    n_jacobian_evals = o->n_jacobian_evals;
-    n_qp_solves = o->n_qp_solves;
-    n_iters = o->n_iters;
+// struct PyOptResult : public OptResult {
+//   py::object py_x;
+//   py::list py_x_over_iters;
+//   py::object py_cost_detail;
+//   py::object py_cost_over_iters;
+//   PyOptResult(OptResultPtr o) {
+//     status = o->status;
+//     py_x = util::toNdarray1(o->x.data(), o->x.size());
+//     for (const VectorXd& x : o->x_over_iters) {
+//       py_x_over_iters.append(util::toNdarray1(x.data(), x.size()));
+//     }
+//     cost = o->cost;
+//     py_cost_detail = util::toNdarray1(o->cost_detail.data(), o->cost_detail.size());
+//     py_cost_over_iters = util::toPyList(o->cost_over_iters);
+//     n_func_evals = o->n_func_evals;
+//     n_jacobian_evals = o->n_jacobian_evals;
+//     n_qp_solves = o->n_qp_solves;
+//     n_iters = o->n_iters;
+//   }
+// };
+// typedef boost::shared_ptr<PyOptResult> PyOptResultPtr;
+
+py::dict optresult_to_dict(OptResultPtr o) {
+  py::dict d;
+  d["status"] = o->status;
+  d["x"] = util::toNdarray1(o->x.data(), o->x.size());
+  py::list x_over_iters;
+  for (const VectorXd& x : o->x_over_iters) {
+    x_over_iters.append(util::toNdarray1(x.data(), x.size()));
+  }
+  d["x_over_iters"] = x_over_iters;
+  d["cost"] = o->cost;
+  d["cost_detail"] = util::toNdarray1(o->cost_detail.data(), o->cost_detail.size());
+  d["cost_over_iters"] = util::toPyList(o->cost_over_iters);
+  d["n_func_evals"] = o->n_func_evals;
+  d["n_jacobian_evals"] = o->n_jacobian_evals;
+  d["n_qp_solves"] = o->n_qp_solves;
+  d["n_iters"] = o->n_iters;
+  return d;
+}
+
+struct GridParams_pickle_suite : py::pickle_suite {
+  static py::tuple getinitargs(const GridParams& gp) {
+    return py::make_tuple(gp.xmin, gp.xmax, gp.ymin, gp.ymax, gp.nx, gp.ny);
   }
 };
-typedef boost::shared_ptr<PyOptResult> PyOptResultPtr;
 
 struct PyOptimizer : public Optimizer {
   py::list py_add_vars(py::list py_names) {
@@ -42,11 +67,12 @@ struct PyOptimizer : public Optimizer {
   }
   void py_add_cost_1(CostFuncPtr cost) { add_cost(cost); }
   void py_add_cost_2(CostFuncPtr cost, double coeff) { add_cost(cost, coeff); }
-  PyOptResultPtr py_optimize(py::object py_start_x) {
+  py::dict py_optimize(py::object py_start_x) {
     VectorXd start_x;
     util::from1darray(py_start_x, start_x);
     OptResultPtr result = optimize(start_x);
-    return PyOptResultPtr(new PyOptResult(result));
+    // return PyOptResultPtr(new PyOptResult(result));
+    return optresult_to_dict(result);
   }
 };
 typedef boost::shared_ptr<PyOptimizer> PyOptimizerPtr;
@@ -115,14 +141,14 @@ BOOST_PYTHON_MODULE(ctimb) {
     .value("OPT_ITER_LIMIT", OPT_ITER_LIMIT)
     ;
 
-  py::class_<PyOptResult, PyOptResultPtr>("OptResult", py::no_init)
-    .def_readonly("status", &PyOptResult::status)
-    .def_readonly("x", &PyOptResult::py_x)
-    .def_readonly("cost", &PyOptResult::cost)
-    .def_readonly("cost_detail", &PyOptResult::py_cost_detail)
-    .def_readonly("cost_over_iters", &PyOptResult::py_cost_over_iters)
-    .def_readonly("x_over_iters", &PyOptResult::py_x_over_iters)
-    ;
+  // py::class_<PyOptResult, PyOptResultPtr>("OptResult", py::no_init)
+  //   .def_readonly("status", &PyOptResult::status)
+  //   .def_readonly("x", &PyOptResult::py_x)
+  //   .def_readonly("cost", &PyOptResult::cost)
+  //   .def_readonly("cost_detail", &PyOptResult::py_cost_detail)
+  //   .def_readonly("cost_over_iters", &PyOptResult::py_cost_over_iters)
+  //   .def_readonly("x_over_iters", &PyOptResult::py_x_over_iters)
+  //   ;
 
   py::class_<OptParams>("OptParams", py::no_init)
     .def_readwrite("init_trust_region_size", &OptParams::init_trust_region_size)
@@ -158,6 +184,7 @@ BOOST_PYTHON_MODULE(ctimb) {
     .def_readonly("ny", &GridParams::ny)
     .def_readonly("eps_x", &GridParams::eps_x)
     .def_readonly("eps_y", &GridParams::eps_y)
+    .def_pickle(GridParams_pickle_suite())
     ;
 
   py::class_<VarField>("VarField", py::no_init);
