@@ -73,7 +73,7 @@ def _depth_to_weights(depth, trunc_dist, filter_radius):
   w[min(last+trunc_dist, len(depth)-1):] = 1
 
   # Downweight around depth discontinuities
-  discont_radius = int(filter_radius/4.) # FIXME: ARBITRARY
+  discont_radius = int(filter_radius/2.) # FIXME: ARBITRARY
   w2 = np.ones_like(w)
   grad = np.convolve(depth[first:last+1], [.5, -.5], 'same')[1:-1]
   asdf = np.r_[np.linspace(1, 0, discont_radius), 0, np.linspace(0, 1, discont_radius)]
