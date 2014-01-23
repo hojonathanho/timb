@@ -39,6 +39,22 @@ def _state_to_visibility_mask(state, depth=None):
   return mask
 
 
+def _find_first_inf(depth):
+  first = 0
+  for i in range(len(depth)):
+    if depth[i] != np.inf:
+      first = i
+      break
+  return first
+
+def _find_last_inf(depth):
+  last = len(depth) - 1
+  for i in range(len(depth)):
+    if depth[len(depth)-i-1] != np.inf:
+      last = len(depth)-i-1
+      break
+  return last
+
 def _depth_to_weights(depth, trunc_dist, filter_radius):
   '''
   Computes weights for a depth image
@@ -57,20 +73,7 @@ def _depth_to_weights(depth, trunc_dist, filter_radius):
     return y
   w = f(out)
 
-  # Set weight to 1 everywhere TSDF_TRUNC away from the object
-  first = 0
-  for i in range(len(depth)):
-    if depth[i] != np.inf:
-      first = i
-      break
-  w[:max(0, first-trunc_dist)] = 1
-
-  last = len(depth) - 1
-  for i in range(len(depth)):
-    if depth[len(depth)-i-1] != np.inf:
-      last = len(depth)-i-1
-      break
-  w[min(last+trunc_dist, len(depth)-1):] = 1
+  first, last = _find_first_inf(depth), _find_last_inf(depth)
 
   # Downweight around depth discontinuities
   discont_radius = int(filter_radius/2.) # FIXME: ARBITRARY
@@ -146,6 +149,12 @@ def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius
 
   dw = _depth_to_weights(depth, trunc_dist, filter_radius)
   w *= dw[:,None]
+
+  # Set weight to 1 everywhere TSDF_TRUNC away from the object
+  first = _find_first_inf(depth)
+  w[:max(0, first-trunc_dist)] = 1
+  last = _find_last_inf(depth)
+  w[min(last+trunc_dist, len(depth)-1):] = 1
 
   return w
 

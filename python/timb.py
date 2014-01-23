@@ -36,7 +36,7 @@ class TrackerParams(object):
     self.agreement_coeff = 1.
 
     self.reweighting_iters = 5
-    self.max_innner_iters = 10
+    self.max_inner_iters = 10
 
     # Observation parameters
     self.tsdf_trunc_dist = 10.
@@ -161,7 +161,7 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, init_phi, in
   tracker = TrackingOptimizationProblem(grid_params, tracker_params)
   tracker.opt.params().check_linearizations = False
   tracker.opt.params().keep_results_over_iterations = False
-  tracker.opt.params().max_iter = tracker_params.max_innner_iters
+  tracker.opt.params().max_iter = tracker_params.max_inner_iters
   tracker.opt.params().approx_improve_rel_tol = 1e-8
 
   tracker.set_observation(obs_tsdf, obs_weight)
@@ -183,9 +183,9 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, init_phi, in
 
   # Smooth next phi
   if tracker_params.enable_smoothing:
-    smoother_ignore_region = \
-      (abs(result.phi) > tracker_params.smoother_phi_ignore_thresh) | \
-      (new_weight < tracker_params.smoother_weight_ignore_thresh)
+    smoother_ignore_region =       (new_weight < tracker_params.smoother_weight_ignore_thresh)
+
+      # (abs(result.phi) > tracker_params.smoother_phi_ignore_thresh) | \
     smoother_weights = np.where(smoother_ignore_region, 0., new_weight)
     new_phi = smooth(result.phi, smoother_weights)
   else:
@@ -314,6 +314,7 @@ def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tsdf, obs_weight, init_ph
 
   plt.subplot(257, aspect='equal')
   plt.title('Flow')
+  plt.axis('off')
   plot_u(result.u_x, result.u_y)
 
   plt.subplot(258)
