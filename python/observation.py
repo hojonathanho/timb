@@ -30,9 +30,9 @@ def _state_to_visibility_mask(state, depth=None):
     d = depth[i]
     if d != np.inf:
       # if the ray hits something, make a pixel zero if any neighbor is zero
-      for j in range(int(d)):
+      for j in range(int(d) + 1):
         try:
-          if state[i,j] or state[i+1,j] or state[i-1,j] or state[i,j+1] or state[i,j-1]:
+          if state[i,j] or state[i+1,j] or state[i-1,j]:
             mask[i,j] = 0
         except IndexError:
           pass
@@ -222,14 +222,14 @@ def test_rotate():
     plt.imshow(img, aspect=1)
 
     TSDF_TRUNC = 10.
-    tsdf, sdf, depth = state_to_tsdf(state, return_all=True)
+    tsdf, sdf, depth = state_to_tsdf(state, TSDF_TRUNC, return_all=True)
     plt.subplot(232)
     plt.axis('off')
     plt.title('Accurate')
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr')
 
-    tsdf, sdf, _ = state_to_tsdf(state, mode='projective', return_all=True)
+    tsdf, sdf, _ = state_to_tsdf(state, TSDF_TRUNC, mode='projective', return_all=True)
     plt.subplot(233)
     plt.axis('off')
     plt.title('Projective')
@@ -242,7 +242,7 @@ def test_rotate():
     plt.title('Mask')
     plt.imshow(mask)
 
-    depth_weight = _depth_to_weights(depth)
+    depth_weight = _depth_to_weights(depth, 20)
     plt.subplot(235)
     plt.title('Depth weight')
     z = np.ones_like(mask, dtype=float)

@@ -10,6 +10,7 @@ parser.add_argument('--output_dir', default=None)
 parser.add_argument('--dump_dir', default=None)
 parser.add_argument('--input_dir', default=None)
 parser.add_argument('--do_not_smooth', action='store_true')
+parser.add_argument('--prior_img', default=None, type=str)
 args = parser.parse_args()
 
 np.set_printoptions(linewidth=1000)
@@ -218,6 +219,10 @@ def test_image():
   WORLD_MAX = (SIZE-1., SIZE-1.)
   gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
   tracker_params = timb.TrackerParams()
+  tracker_params.flow_norm_coeff = 1e-6
+  tracker_params.flow_rigidity_coeff = 1e-1
+  tracker_params.observation_coeff = 1.
+  tracker_params.agreement_coeff = 1.
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
@@ -258,6 +263,32 @@ def test_image():
   orig_phi = np.empty((SIZE, SIZE)); orig_phi.fill(tracker_params.tsdf_trunc_dist)
   orig_omega = np.zeros((SIZE, SIZE));# orig_omega.fill(.0001)
 
+  preprocess_img = lambda img: np.transpose(img, (1, 0, 2))
+
+  if args.prior_img is not None:
+    img = preprocess_img(ndimage.imread(args.prior_img))
+    state = (img[:,:,0] == 0) & (img[:,:,1] == 0) & (img[:,:,2] == 0)
+    sdf = ndimage.morphology.distance_transform_edt(~state)
+    sdf[img[:,:,0] != 255] *= -1.
+    orig_phi = np.clip(sdf, -tracker_params.tsdf_trunc_dist, tracker_params.tsdf_trunc_dist)
+
+
+    import matplotlib.pyplot as plt
+    def plot_field(f, contour=False):
+      plt.imshow(f.T, aspect=1, vmin=-tracker_params.tsdf_trunc_dist, vmax=tracker_params.tsdf_trunc_dist, cmap='bwr', origin='lower')
+      if contour:
+        x = np.linspace(gp.xmin, gp.xmax, gp.nx)
+        y = np.linspace(gp.ymin, gp.ymax, gp.ny)
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        plt.contour(X, Y, f, levels=[0])
+    plt.subplot(121)
+    plot_field(orig_phi, contour=True)
+    plt.subplot(122)
+    tsdf = observation.state_to_tsdf(state, tracker_params.tsdf_trunc_dist)
+    plot_field(tsdf, contour=True)
+    plt.show()
+    orig_omega.fill(1)
+
   curr_phi, curr_omega = orig_phi, orig_omega
 
   if args.input_dir is not None:
@@ -271,13 +302,9 @@ def test_image():
 
     import os
     files = [(args.input_dir + '/' + f) for f in os.listdir(args.input_dir) if os.path.isfile(args.input_dir + '/' + f)]
-    images = [ndimage.imread(f) for f in sorted_nicely(files)]
-    import matplotlib; import matplotlib.pyplot as plt
+    images = [preprocess_img(ndimage.imread(f)) for f in sorted_nicely(files)]
+
     for i, img in enumerate(images):
-      img = np.transpose(img, (1, 0, 2))
-      # state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-      # plt.imshow(state.T, origin='lower')
-      # plt.show()
       curr_phi, curr_omega = run(i, img, curr_phi, curr_omega)
 
   else:
