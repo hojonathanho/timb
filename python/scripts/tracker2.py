@@ -228,11 +228,12 @@ def test_image():
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    tsdf, sdf, depth, weight = observation.observation_from_full_img(img, tracker_params)
+    tsdf, sdf, depth, weight, smoother_ignore_region = \
+      observation.observation_from_full_img(img, tracker_params)
 
     new_phi, new_weight, problem_data = timb.run_one_step(
       gp, tracker_params,
-      tsdf, weight,
+      tsdf, weight, smoother_ignore_region,
       init_phi, init_weight,
       return_full=True
     )

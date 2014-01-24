@@ -126,7 +126,7 @@ class TrackingOptimizationProblem(object):
     return results[-1], opt_results[-1]
 
 
-def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, init_phi, init_weight, return_full=False):
+def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_smoother_ignore_region, init_phi, init_weight, return_full=False):
   assert isinstance(tracker_params, TrackerParams)
 
   if return_full:
@@ -183,9 +183,12 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, init_phi, in
 
   # Smooth next phi
   if tracker_params.enable_smoothing:
-    smoother_ignore_region =       (new_weight < tracker_params.smoother_weight_ignore_thresh)
-
-      # (abs(result.phi) > tracker_params.smoother_phi_ignore_thresh) | \
+    flowed_smoother_ignore = apply_flow(grid_params, obs_smoother_ignore_region, result.u_x, result.u_y)
+    # The smoother should feel free to overwrite regions of low weight
+    # and regions far from zero (unless it's in obs_smoother_ignore_region)
+    smoother_ignore_region = \
+      ((abs(result.phi) > tracker_params.smoother_phi_ignore_thresh) & (flowed_smoother_ignore == 0)) | \
+      (new_weight < tracker_params.smoother_weight_ignore_thresh)
     smoother_weights = np.where(smoother_ignore_region, 0., new_weight)
     new_phi = smooth(result.phi, smoother_weights)
   else:

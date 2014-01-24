@@ -55,6 +55,17 @@ def _find_last_inf(depth):
       break
   return last
 
+def _make_edge_downweight(length, downweight_size, downweight_front=False, downweight_back=False):
+  assert downweight_front or downweight_back
+
+  w = np.ones(length)
+  m = min(downweight_size, length)
+  if downweight_front:
+    w[:m] = np.minimum(w[:m], np.linspace(0, 1, m))
+  if downweight_back:
+    w[-m:] = np.minimum(w[-m:], np.linspace(1, 0, m))
+  return w
+
 def _depth_to_weights(depth, trunc_dist, filter_radius):
   '''
   Computes weights for a depth image
@@ -151,12 +162,16 @@ def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius
   w *= dw[:,None]
 
   # Set weight to 1 everywhere TSDF_TRUNC away from the object
-  first = _find_first_inf(depth)
-  w[:max(0, first-trunc_dist)] = 1
-  last = _find_last_inf(depth)
-  w[min(last+trunc_dist, len(depth)-1):] = 1
+  first, last = _find_first_inf(depth), _find_last_inf(depth)
+  smoother_ignore_region = np.zeros_like(w)
 
-  return w
+  w[:max(0, first-trunc_dist),:] = _make_edge_downweight(max(0, first-trunc_dist), filter_radius, downweight_back=True)[:,None]
+  smoother_ignore_region[:max(0, first-trunc_dist),:] = 1.
+
+  w[min(last+trunc_dist, len(depth)-1):,:] = _make_edge_downweight(len(depth)-min(last+trunc_dist, len(depth)-1), filter_radius, downweight_front=True)[:,None]
+  smoother_ignore_region[min(last+trunc_dist, len(depth)-1):,:] = 1.
+
+  return w, smoother_ignore_region
 
 
 def observation_from_full_img(img, tracker_params):
@@ -169,7 +184,7 @@ def observation_from_full_img(img, tracker_params):
     return_all=True
   )
 
-  weight = compute_obs_weight(
+  weight, smoother_ignore_region = compute_obs_weight(
     sdf,
     depth,
     tracker_params.tsdf_trunc_dist,
@@ -178,7 +193,7 @@ def observation_from_full_img(img, tracker_params):
     filter_radius=tracker_params.obs_weight_filter_radius
   )
 
-  return tsdf, sdf, depth, weight
+  return tsdf, sdf, depth, weight, smoother_ignore_region
 
 
 ########## TESTS ##########
@@ -267,12 +282,15 @@ def test_rotate():
     plt.title('Mask')
     plt.imshow(mask)
 
-    depth_weight = _depth_to_weights(depth, TSDF_TRUNC, 20)
+    #depth_weight = _depth_to_weights(depth, TSDF_TRUNC, 20)
+    weight, ignore = compute_obs_weight(sdf, depth, TSDF_TRUNC, 0, 5, 20)
     plt.subplot(235)
     plt.title('Depth weight')
-    z = np.ones_like(mask, dtype=float)
-    z *= depth_weight[:,None]
-    plt.imshow(z, cmap='Greys_r')
+    #z = np.ones_like(mask, dtype=float)
+    #z *= depth_weight[:,None]
+    plt.imshow(weight, cmap='Greys_r')
+    plt.subplot(236)
+    plt.plot(weight[:,50])
 
     plt.show()
 
