@@ -146,9 +146,6 @@ def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
 
 
 def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius):
-  # a = abs(obs_tsdf)
-  # return np.where(a < trunc_val, (OBS_PEAK_WEIGHT/trunc_val)*(trunc_val-a), 0.)
-
   # linear weight (b) in Bylow et al 2013
   # epsilon, delta = 5, 10
   # epsilon, delta = 0, 5
@@ -162,16 +159,17 @@ def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius
   w *= dw[:,None]
 
   # Set weight to 1 everywhere TSDF_TRUNC away from the object
-  first, last = _find_first_inf(depth), _find_last_inf(depth)
-  smoother_ignore_region = np.zeros_like(w)
+  always_trust_mask = np.zeros_like(w, dtype=bool)
+  # first, last = _find_first_inf(depth), _find_last_inf(depth)
+  # always_trust_mask = np.zeros_like(w, dtype=bool)
 
-  w[:max(0, first-trunc_dist),:] = _make_edge_downweight(max(0, first-trunc_dist), filter_radius, downweight_back=True)[:,None]
-  smoother_ignore_region[:max(0, first-trunc_dist),:] = 1.
+  # w[:max(0, first-trunc_dist),:] = _make_edge_downweight(max(0, first-trunc_dist), filter_radius, downweight_back=True)[:,None]
+  # always_trust_mask[:max(0, first-trunc_dist),:] = True
 
-  w[min(last+trunc_dist, len(depth)-1):,:] = _make_edge_downweight(len(depth)-min(last+trunc_dist, len(depth)-1), filter_radius, downweight_front=True)[:,None]
-  smoother_ignore_region[min(last+trunc_dist, len(depth)-1):,:] = 1.
+  # w[min(last+trunc_dist, len(depth)-1):,:] = _make_edge_downweight(len(depth)-min(last+trunc_dist, len(depth)-1), filter_radius, downweight_front=True)[:,None]
+  # always_trust_mask[min(last+trunc_dist, len(depth)-1):,:] = True
 
-  return w, smoother_ignore_region
+  return w, always_trust_mask
 
 
 def observation_from_full_img(img, tracker_params):
@@ -184,7 +182,7 @@ def observation_from_full_img(img, tracker_params):
     return_all=True
   )
 
-  weight, smoother_ignore_region = compute_obs_weight(
+  weight, always_trust_mask = compute_obs_weight(
     sdf,
     depth,
     tracker_params.tsdf_trunc_dist,
@@ -193,7 +191,7 @@ def observation_from_full_img(img, tracker_params):
     filter_radius=tracker_params.obs_weight_filter_radius
   )
 
-  return tsdf, sdf, depth, weight, smoother_ignore_region
+  return tsdf, sdf, depth, weight, always_trust_mask
 
 
 ########## TESTS ##########

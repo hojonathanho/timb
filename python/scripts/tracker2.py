@@ -228,16 +228,20 @@ def test_image():
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    tsdf, sdf, depth, weight, smoother_ignore_region = \
+    tsdf, sdf, depth, weight, always_trust_mask = \
       observation.observation_from_full_img(img, tracker_params)
 
     new_phi, new_weight, problem_data = timb.run_one_step(
       gp, tracker_params,
-      tsdf, weight, smoother_ignore_region,
+      tsdf, weight, always_trust_mask,
       init_phi, init_weight,
-      return_full=True
+      return_full=True,
+      introduce_zero_crossings=(obs_num == 0)
     )
   
+    trusted = timb.threshold_trusted(tracker_params, new_phi, new_weight)
+    output = np.where(trusted, new_phi, np.nan)
+
     timb.plot_problem_data(
       plt,
       tracker_params.tsdf_trunc_dist,
@@ -246,7 +250,7 @@ def test_image():
       tsdf, weight,
       init_phi, init_weight,
       problem_data['result'], problem_data['opt_result'],
-      new_phi, new_weight
+      new_phi, new_weight, output
     )
 
     if args.output_dir is None:

@@ -126,7 +126,7 @@ class TrackingOptimizationProblem(object):
     return results[-1], opt_results[-1]
 
 
-def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_smoother_ignore_region, init_phi, init_weight, return_full=False):
+def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_trust_mask, init_phi, init_weight, return_full=False, introduce_zero_crossings=False):
   assert isinstance(tracker_params, TrackerParams)
 
   if return_full:
@@ -135,27 +135,6 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_smoother
     problem_data['obs_weight'] = obs_weight
     problem_data['init_phi'] = init_phi
     problem_data['init_weight'] = init_weight
-
-  # # Perform observation
-  # tsdf, sdf, depth = observation.state_to_tsdf(
-  #   state,
-  #   trunc_dist=tracker_params.tsdf_trunc_dist,
-  #   mode=tracker_params.sensor_mode,
-  #   return_all=True
-  # )
-  # if return_full:
-  #   problem_data['obs_tsdf'], problem_data['obs_sdf'], problem_data['obs_depth'] = tsdf, sdf, depth
-
-  # # Calculate observation weight
-  # obs_weight = observation.compute_obs_weight(
-  #   sdf,
-  #   depth,
-  #   epsilon=tracker_params.obs_weight_epsilon,
-  #   delta=tracker_params.obs_weight_delta,
-  #   filter_radius=tracker_params.obs_weight_filter_radius
-  # )
-  # if return_full:
-  #   problem_data['obs_weight'] = obs_weight
 
   # Set up tracking problem
   tracker = TrackingOptimizationProblem(grid_params, tracker_params)
@@ -183,14 +162,31 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_smoother
 
   # Smooth next phi
   if tracker_params.enable_smoothing:
-    flowed_smoother_ignore = apply_flow(grid_params, obs_smoother_ignore_region, result.u_x, result.u_y)
-    # The smoother should feel free to overwrite regions of low weight
-    # and regions far from zero (unless it's in obs_smoother_ignore_region)
-    smoother_ignore_region = \
-      ((abs(result.phi) > tracker_params.smoother_phi_ignore_thresh) & (flowed_smoother_ignore == 0)) | \
-      (new_weight < tracker_params.smoother_weight_ignore_thresh)
-    smoother_weights = np.where(smoother_ignore_region, 0., new_weight)
-    new_phi = smooth(result.phi, smoother_weights)
+    # if introduce_zero_crossings:
+    # On the first step, first smooth by TPS cost to introduce a zero crossing at a good place
+    flowed_always_trust_mask = apply_flow(grid_params, np.where(obs_always_trust_mask, 1., 0.), result.u_x, result.u_y) > .1
+    smoother_fixed_region = threshold_trusted(tracker_params, result.phi, new_weight, flowed_always_trust_mask)
+
+    # HACK: also fix the far side of the grid to be +trunc
+    tmp_phi, tmp_weight = result.phi.copy(), new_weight.copy()
+    smoother_fixed_region[:,-1] = True
+    tmp_weight[:,-1] = 1
+    tmp_phi[:,-1] = tracker_params.tsdf_trunc_dist
+    smoother_fixed_region[0,:] = True
+    tmp_weight[0,:] = 1
+    tmp_phi[0,:] = tracker_params.tsdf_trunc_dist
+    smoother_fixed_region[-1,:] = True
+    tmp_weight[-1,:] = 1
+    tmp_phi[-1,:] = tracker_params.tsdf_trunc_dist
+
+    smoother_weights = np.where(smoother_fixed_region, tmp_weight, 0.)
+    new_phi = smooth(tmp_phi, smoother_weights)
+    # else:
+    #   new_phi = result.phi
+
+    # March from zero crossing
+    new_phi = smooth_to_sdf(new_phi)
+
   else:
     new_phi = result.phi
 
@@ -202,6 +198,11 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_smoother
   if return_full:
     return new_phi, new_weight, problem_data
   return new_phi, new_weight
+
+
+def smooth_to_sdf(phi):
+  import skfmm
+  return skfmm.distance(phi)
 
 
 def smooth(phi, weights, mode='tps'):
@@ -234,6 +235,15 @@ def smooth(phi, weights, mode='tps'):
   return new_phi
 
 
+def threshold_trusted(tracker_params, phi, weight, always_trust_mask=None):
+  # The smoother should feel free to overwrite regions of low weight
+  # and regions far from zero (unless it's in obs_smoother_ignore_region)
+  mask  = abs(phi) < tracker_params.smoother_phi_ignore_thresh
+  mask &= weight >= tracker_params.smoother_weight_ignore_thresh
+  if always_trust_mask is not None:
+    mask |= always_trust_mask
+  return mask
+
 
 ########## Utility functions ##########
 
@@ -263,7 +273,7 @@ def plot_state(state):
   plt.show()
 
 
-def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tsdf, obs_weight, init_phi, init_weight, result, opt_result, next_phi, next_weight):
+def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tsdf, obs_weight, init_phi, init_weight, result, opt_result, next_phi, next_weight, output):
 
   def plot_field(f, contour=False):
     plt.imshow(f.T, aspect=1, vmin=-tsdf_trunc_dist, vmax=tsdf_trunc_dist, cmap='bwr', origin='lower')
@@ -311,26 +321,31 @@ def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tsdf, obs_weight, init_ph
   plt.axis('off')
   plt.imshow(init_weight.T, vmin=0, vmax=observation.OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
 
-  plt.subplot(256)
-  plt.title('Log cost')
-  plt.plot(np.log(opt_result['cost_over_iters']))
+  # plt.subplot(256)
+  # plt.title('Log cost')
+  # plt.plot(np.log(opt_result['cost_over_iters']))
 
-  plt.subplot(257, aspect='equal')
+  plt.subplot(256, aspect='equal')
   plt.title('Flow')
   plt.axis('off')
   plot_u(result.u_x, result.u_y)
 
-  plt.subplot(258)
+  plt.subplot(257)
   plt.title('New TSDF')
   plt.axis('off')
   plot_field(result.phi, contour=True)
 
-  plt.subplot(259)
+  plt.subplot(258)
   plt.title('New weight')
   plt.axis('off')
   plt.imshow(next_weight.T, vmin=0, vmax=observation.OBS_PEAK_WEIGHT*10, cmap='binary').set_interpolation('nearest')
 
-  plt.subplot(2,5,10)
+  plt.subplot(259)
   plt.title('Smoothed new TSDF')
   plt.axis('off')
   plot_field(next_phi, contour=True)
+
+  plt.subplot(2, 5, 10)
+  plt.title('Output')
+  plt.axis('off')
+  plot_field(output, contour=True)
