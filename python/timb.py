@@ -45,11 +45,13 @@ class TrackerParams(object):
     self.obs_weight_epsilon = 0.
     self.obs_weight_delta = 5.
     self.obs_weight_filter_radius = 20
+    self.obs_weight_far = False
 
     # Smoothing parameters
     self.enable_smoothing = True
     self.smoother_phi_ignore_thresh = self.tsdf_trunc_dist / 2.
     self.smoother_weight_ignore_thresh = 1e-2
+    self.smoother_post_fmm = False # whether or not to reinitialize to a SDF after TPS smoothing
 
 
 
@@ -126,7 +128,7 @@ class TrackingOptimizationProblem(object):
     return results[-1], opt_results[-1]
 
 
-def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_trust_mask, init_phi, init_weight, return_full=False, introduce_zero_crossings=False):
+def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_trust_mask, init_phi, init_weight, return_full=False):
   assert isinstance(tracker_params, TrackerParams)
 
   if return_full:
@@ -162,8 +164,7 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_t
 
   # Smooth next phi
   if tracker_params.enable_smoothing:
-    # if introduce_zero_crossings:
-    # On the first step, first smooth by TPS cost to introduce a zero crossing at a good place
+    # First smooth by TPS cost to introduce a zero crossing at a good place
     flowed_always_trust_mask = apply_flow(grid_params, np.where(obs_always_trust_mask, 1., 0.), result.u_x, result.u_y) > .1
     smoother_fixed_region = threshold_trusted(tracker_params, result.phi, new_weight, flowed_always_trust_mask)
 
@@ -181,11 +182,10 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_t
 
     smoother_weights = np.where(smoother_fixed_region, tmp_weight, 0.)
     new_phi = smooth(tmp_phi, smoother_weights)
-    # else:
-    #   new_phi = result.phi
 
-    # March from zero crossing
-    new_phi = smooth_to_sdf(new_phi)
+    if tracker_params.smoother_post_fmm:
+      # March from zero crossing
+      new_phi = smooth_to_sdf(new_phi)
 
   else:
     new_phi = result.phi
@@ -244,6 +244,8 @@ def threshold_trusted(tracker_params, phi, weight, always_trust_mask=None):
     mask |= always_trust_mask
   return mask
 
+def threshold_trusted_for_view(tracker_params, phi, weight):
+  return weight >= .5
 
 ########## Utility functions ##########
 

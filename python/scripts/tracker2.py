@@ -206,7 +206,7 @@ def generate_rot_flow(size, angle):
 
 def test_image():
   import matplotlib
-  # matplotlib.use('Agg')
+  matplotlib.use('Agg')
   import matplotlib.pyplot as plt
 
   SIZE = 100
@@ -223,8 +223,8 @@ def test_image():
   tracker_params.flow_rigidity_coeff = 1e-1
   tracker_params.observation_coeff = 1.
   tracker_params.agreement_coeff = 1.
-  tracker_params.reweighting_iters = 5#10
-  tracker_params.max_inner_iters = 5#20
+  tracker_params.reweighting_iters = 10
+  tracker_params.max_inner_iters = 20
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
@@ -235,8 +235,7 @@ def test_image():
       gp, tracker_params,
       tsdf, weight, always_trust_mask,
       init_phi, init_weight,
-      return_full=True,
-      introduce_zero_crossings=(obs_num == 0)
+      return_full=True
     )
   
     trusted = timb.threshold_trusted(tracker_params, new_phi, new_weight)
