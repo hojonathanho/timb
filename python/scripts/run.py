@@ -47,34 +47,35 @@ def run(tracker_params):
   import os
   import cPickle
   import uuid
+  import datetime
   output_filename = os.path.join(args.output_dir, str(uuid.uuid4()) + '.log.pkl')
   print 'Writing to', output_filename
   out = {
     'tracker_params': tracker_params,
     'grid_params': ex.get_grid_params(),
     'log': ex_log,
+    'datetime': datetime.now()
   }
   with open(output_filename, 'w') as f:
     cPickle.dump(out, f, cPickle.HIGHEST_PROTOCOL)
 
 def main():
 
-  def gen_tracker_params():
-    tracker_params = timb.TrackerParams()
-    tracker_params.reweighting_iters = 10
-    tracker_params.max_inner_iters = 20
-    for a in [.1, 1.]:
-      tracker_params.flow_rigidity_coeff = a
-      for b in [True, False]:
-        tracker_params.obs_weight_far = b
-        for c in [True, False]:
-          tracker_params.enable_smoothing = c
-          for d in [True, False]:
-            tracker_params.smoother_post_fmm = d
-            yield tracker_params
+  tracker_params = timb.TrackerParams()
+  tracker_params.reweighting_iters = 10
+  tracker_params.max_inner_iters = 10
+  for a in [.1, 1.]:
+    tracker_params.flow_rigidity_coeff = a
+    for b in [True, False]:
+      tracker_params.obs_weight_far = b
+      for c in [True, False]:
+        tracker_params.enable_smoothing = c
+        for d in [True, False]:
+          tracker_params.smoother_post_fmm = d
 
-  for p in gen_tracker_params():
-    run(p)
+          # print tracker_params.__dict__
+          run(tracker_params)
+
 
 if __name__ == '__main__':
   main()
