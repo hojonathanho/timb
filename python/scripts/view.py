@@ -4,7 +4,6 @@ import timb
 import numpy as np
 import os
 
-import matplotlib.pyplot as plt
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -13,6 +12,11 @@ parser.add_argument('--dump_to_dir', type=str, default=None)
 parser.add_argument('--dump_to_mongo', action='store_true')
 parser.add_argument('--mongo_experiment_name', type=str, default=None)
 args = parser.parse_args()
+
+import matplotlib
+if args.dump_to_mongo or args.dump_to_dir is not None:
+  matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 with open(args.data_file, 'rb') as f:
   data_str = f.read()
@@ -79,6 +83,7 @@ while i < len(log):
   )
 
   if args.dump_to_dir is not None:
+    matplotlib.use('Agg')
     print i
     plt.savefig(os.path.join(args.dump_to_dir, '%05d.png' % i), bbox_inches='tight')
     i += 1
