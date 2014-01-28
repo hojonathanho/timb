@@ -84,7 +84,7 @@ def _depth_to_weights(depth, trunc_dist, filter_radius, use_linear_downweight, u
     return y
   def g(x):
     '''maps [.5, 1] to [0, 1] in a linear way'''
-    return 2.*(x - .5)
+    return np.clip(2.*(x - .5), 0., 1.)
 
   if use_linear_downweight:
     w = g(out)
@@ -270,41 +270,48 @@ def test_rotate():
     matplotlib.rcParams.update({'font.size': 8})
 
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    plt.subplot(231)
+    plt.subplot(331)
     plt.title('State')
     plt.axis('off')
     plt.imshow(img, aspect=1)
 
     TSDF_TRUNC = 10.
     tsdf, sdf, depth = state_to_tsdf(state, TSDF_TRUNC, return_all=True)
-    plt.subplot(232)
+    plt.subplot(332)
     plt.axis('off')
     plt.title('Accurate')
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr')
 
     tsdf, sdf, _ = state_to_tsdf(state, TSDF_TRUNC, mode='projective', return_all=True)
-    plt.subplot(233)
+    plt.subplot(333)
     plt.axis('off')
     plt.title('Projective')
     plt.contour(tsdf, levels=[0])
     plt.imshow(tsdf, vmin=-TSDF_TRUNC, vmax=TSDF_TRUNC, cmap='bwr')
 
     mask = _state_to_visibility_mask(state)
-    plt.subplot(234)
+    plt.subplot(334)
     plt.axis('off')
     plt.title('Mask')
     plt.imshow(mask)
 
-    #depth_weight = _depth_to_weights(depth, TSDF_TRUNC, 20)
-    weight, ignore = compute_obs_weight(sdf, depth, TSDF_TRUNC, 0, 5, 20)
-    plt.subplot(235)
+    depth_weight = _depth_to_weights(depth, TSDF_TRUNC, 20, use_linear_downweight=True, use_min_to_combine=True)
+    #weight, ignore = compute_obs_weight(sdf, depth, TSDF_TRUNC, 0, 5, 20)
+    plt.subplot(335)
     plt.title('Depth weight')
-    #z = np.ones_like(mask, dtype=float)
-    #z *= depth_weight[:,None]
-    plt.imshow(weight, cmap='Greys_r')
-    plt.subplot(236)
-    plt.plot(weight[:,50])
+    z = np.ones_like(mask, dtype=float)
+    z *= depth_weight[:,None]
+    plt.imshow(z, cmap='Greys_r')
+    plt.subplot(336)
+    #plt.plot(weight[:,50])
+    plt.plot(z)
+
+    plt.subplot(337)
+    depth_weight = _depth_to_weights(depth, TSDF_TRUNC, 20, use_linear_downweight=False, use_min_to_combine=True)
+    z = np.ones_like(mask, dtype=float)
+    z *= depth_weight[:,None]
+    plt.plot(z)
 
     plt.show()
 
