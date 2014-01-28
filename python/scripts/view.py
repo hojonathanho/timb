@@ -97,6 +97,7 @@ while i < len(log):
     plt.savefig(name, bbox_inches='tight')
     with open(name, 'rb') as f:
       plot_file = fs.put(f.read())
+    os.remove(name)
 
     entry_file = fs.put(cPickle.dumps(entry, protocol=2))
 
