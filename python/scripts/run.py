@@ -16,7 +16,7 @@ args = parser.parse_args()
 
 def run(tracker_params):
   if args.fake:
-    print tracker_params.flow_rigidity_coeff, tracker_params.enable_smoothing, tracker_params.smoother_phi_ignore_thresh, tracker_params.smoother_weight_ignore_thresh
+    print tracker_params.flow_rigidity_coeff, tracker_params.use_linear_downweight, tracker_params.use_min_to_combine
     return
 
   mod_class_list = args.experiment_class.split('.')
@@ -78,19 +78,20 @@ def main():
     tracker_params.max_inner_iters = 10
     tracker_params.obs_weight_far = True
     tracker_params.smoother_post_fmm = False
+    tracker_params.enable_smoothing = True
 
     for a in [.1, 1.]:
       tracker_params.flow_rigidity_coeff = a
-      for b in [True]:
-        tracker_params.enable_smoothing = b
-        if not tracker_params.enable_smoothing:
+      for b in [True, False]:
+        tracker_params.use_linear_downweight = b
+        for c in [True, False]:
+          tracker_params.use_min_to_combine = c
           yield deepcopy(tracker_params)
-        else:
-          for c in [5., 8.]:
-            tracker_params.smoother_phi_ignore_thresh = c
-            for d in [1e-2, 1e-1]:
-              tracker_params.smoother_weight_ignore_thresh = d
-              yield deepcopy(tracker_params)
+      # for c in [5., 8.]:
+      #   tracker_params.smoother_phi_ignore_thresh = c
+      #   for d in [1e-2, 1e-1]:
+      #     tracker_params.smoother_weight_ignore_thresh = d
+      #     yield deepcopy(tracker_params)
 
 
 # def gen_params():

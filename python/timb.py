@@ -47,6 +47,9 @@ class TrackerParams(object):
     self.obs_weight_filter_radius = 20
     self.obs_weight_far = False
 
+    self.use_linear_downweight = True
+    self.use_min_to_combine = True
+
     # Smoothing parameters
     self.enable_smoothing = True
     self.smoother_phi_ignore_thresh = self.tsdf_trunc_dist / 2.

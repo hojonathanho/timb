@@ -66,7 +66,7 @@ def _make_edge_downweight(length, downweight_size, downweight_front=False, downw
     w[-m:] = np.minimum(w[-m:], np.linspace(1, 0, m))
   return w
 
-def _depth_to_weights(depth, trunc_dist, filter_radius):
+def _depth_to_weights(depth, trunc_dist, filter_radius, use_linear_downweight, use_min_to_combine):
   '''
   Computes weights for a depth image
   '''
@@ -82,7 +82,14 @@ def _depth_to_weights(depth, trunc_dist, filter_radius):
     y[x < .5] = 0.
     y[x > 1.] = 1.
     return y
-  w = f(out)
+  def g(x):
+    '''maps [.5, 1] to [0, 1] in a linear way'''
+    return 2.*(x - .5)
+
+  if use_linear_downweight:
+    w = g(out)
+  else:
+    w = f(out)
 
   first, last = _find_first_inf(depth), _find_last_inf(depth)
 
@@ -90,11 +97,14 @@ def _depth_to_weights(depth, trunc_dist, filter_radius):
   discont_radius = int(filter_radius/2.) # FIXME: ARBITRARY
   w2 = np.ones_like(w)
   grad = np.convolve(depth[first:last+1], [.5, -.5], 'same')[1:-1]
-  asdf = np.r_[np.linspace(1, 0, discont_radius), 0, np.linspace(0, 1, discont_radius)]
+  decay = np.r_[np.linspace(1, 0, discont_radius), 0, np.linspace(0, 1, discont_radius)]
   for i in range(len(grad)):
     if abs(grad[i]) > 3:
       offset = first + i + 1
-      w2[offset-discont_radius:offset+discont_radius+1] *= asdf
+      if use_min_to_combine:
+        w2[offset-discont_radius:offset+discont_radius+1] = np.minimum(w2[offset-discont_radius:offset+discont_radius+1], decay)
+      else:
+        w2[offset-discont_radius:offset+discont_radius+1] *= decay
   w = np.minimum(w, w2)
 
   return w
@@ -145,7 +155,7 @@ def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
   return tsdf
 
 
-def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius, weight_far):
+def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius, use_linear_downweight, use_min_to_combine, weight_far):
   # linear weight (b) in Bylow et al 2013
   # epsilon, delta = 5, 10
   # epsilon, delta = 0, 5
@@ -155,7 +165,7 @@ def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius
   w = np.where(obs_sdf < -delta, 0, w)
   w = np.where(np.isfinite(obs_sdf), w, 0) # zero precision where we get inf/no depth measurement
 
-  dw = _depth_to_weights(depth, trunc_dist, filter_radius)
+  dw = _depth_to_weights(depth, trunc_dist, filter_radius, use_linear_downweight, use_min_to_combine)
   w *= dw[:,None]
 
   # Set weight to 1 everywhere TSDF_TRUNC away from the object
@@ -187,6 +197,8 @@ def observation_from_full_state(state, tracker_params):
     epsilon=tracker_params.obs_weight_epsilon,
     delta=tracker_params.obs_weight_delta,
     filter_radius=tracker_params.obs_weight_filter_radius,
+    use_linear_downweight=tracker_params.use_linear_downweight,
+    use_min_to_combine=tracker_params.use_min_to_combine,
     weight_far=tracker_params.obs_weight_far
   )
 
@@ -319,7 +331,7 @@ def test_rotate():
 
   def gen_img_sequence2():
     import os
-    input_dir = '/Users/jonathan/Dropbox/research/tracking/data/in/simple_bend'
+    input_dir = os.path.expanduser('~/Dropbox/research/tracking/data/in/simple_bend')
     files = [(input_dir + '/' + f) for f in os.listdir(input_dir) if os.path.isfile(input_dir + '/' + f)]
     for f in sorted(files):
       print f
