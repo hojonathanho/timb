@@ -1,6 +1,7 @@
 import numpy as np
 import experiment
 import timb
+import time
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -15,7 +16,7 @@ args = parser.parse_args()
 
 def run(tracker_params):
   if args.fake:
-    print tracker_params.flow_rigidity_coeff, tracker_params.obs_weight_far, tracker_params.enable_smoothing, tracker_params.smoother_post_fmm
+    print tracker_params.flow_rigidity_coeff, tracker_params.enable_smoothing, tracker_params.smoother_phi_ignore_thresh, tracker_params.smoother_weight_ignore_thresh
     return
 
   mod_class_list = args.experiment_class.split('.')
@@ -48,7 +49,9 @@ def run(tracker_params):
     # else:
     #   plt.savefig('%s/plots_%d.png' % (args.output_dir, i), bbox_inches='tight')
 
+  t_start = time.time()
   ex_log = experiment.run_experiment(ex, tracker_params, iter_callback, args.iter_cap)
+  t_elapsed = time.time() - t_start
 
   import os
   import cPickle
@@ -60,7 +63,8 @@ def run(tracker_params):
     'tracker_params': tracker_params,
     'grid_params': ex.get_grid_params(),
     'log': ex_log,
-    'datetime': datetime.now()
+    'datetime': datetime.now(),
+    'time_elapsed': t_elapsed,
   }
   with open(output_filename, 'w') as f:
     cPickle.dump(out, f, cPickle.HIGHEST_PROTOCOL)
@@ -72,15 +76,37 @@ def main():
     tracker_params = timb.TrackerParams()
     tracker_params.reweighting_iters = 10
     tracker_params.max_inner_iters = 10
+    tracker_params.obs_weight_far = True
+    tracker_params.smoother_post_fmm = False
+
     for a in [.1, 1.]:
       tracker_params.flow_rigidity_coeff = a
-      for b in [True, False]:
-        tracker_params.obs_weight_far = b
-        for c in [True, False]:
-          tracker_params.enable_smoothing = c
-          for d in [True, False]:
-            tracker_params.smoother_post_fmm = d
-            yield deepcopy(tracker_params)
+      for b in [True]:
+        tracker_params.enable_smoothing = b
+        if not tracker_params.enable_smoothing:
+          yield deepcopy(tracker_params)
+        else:
+          for c in [5., 8.]:
+            tracker_params.smoother_phi_ignore_thresh = c
+            for d in [1e-2, 1e-1]:
+              tracker_params.smoother_weight_ignore_thresh = d
+              yield deepcopy(tracker_params)
+
+
+# def gen_params():
+#   from copy import deepcopy
+#   tracker_params = timb.TrackerParams()
+#   tracker_params.reweighting_iters = 10
+#   tracker_params.max_inner_iters = 10
+#   for a in [.1, 1.]:
+#     tracker_params.flow_rigidity_coeff = a
+#     for b in [True, False]:
+#       tracker_params.obs_weight_far = b
+#       for c in [True, False]:
+#         tracker_params.enable_smoothing = c
+#         for d in [True, False]:
+#           tracker_params.smoother_post_fmm = d
+#           yield deepcopy(tracker_params)
 
 
   if args.parallel is None:

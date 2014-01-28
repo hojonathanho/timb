@@ -60,7 +60,9 @@ if args.dump_to_mongo:
     'name': args.mongo_experiment_name,
     'tracker_params': tracker_params.__dict__,
     'grid_params': gp_dict,
-    'log': []
+    'datetime': data['datetime'],
+    'time_elapsed': data['time_elapsed'],
+    'log': [],
   }
 
 
