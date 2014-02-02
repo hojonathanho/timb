@@ -206,7 +206,7 @@ def generate_rot_flow(size, angle):
 
 def test_image():
   import matplotlib
-  matplotlib.use('Agg')
+  if args.output_dir is not None: matplotlib.use('Agg')
   import matplotlib.pyplot as plt
 
   SIZE = 100
@@ -220,11 +220,11 @@ def test_image():
   gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
   tracker_params = timb.TrackerParams()
   tracker_params.flow_norm_coeff = 1e-6
-  tracker_params.flow_rigidity_coeff = 1e-1
+  tracker_params.flow_rigidity_coeff = 1e6
   tracker_params.observation_coeff = 1.
   tracker_params.agreement_coeff = 1.
-  tracker_params.reweighting_iters = 10
-  tracker_params.max_inner_iters = 20
+  tracker_params.reweighting_iters = 5
+  tracker_params.max_inner_iters = 5
 
   def run(obs_num, img, init_phi, init_weight):
     state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
@@ -269,7 +269,8 @@ def test_image():
   orig_phi = np.empty((SIZE, SIZE)); orig_phi.fill(tracker_params.tsdf_trunc_dist)
   orig_omega = np.zeros((SIZE, SIZE));# orig_omega.fill(.0001)
 
-  preprocess_img = lambda img: np.transpose(img, (1, 0, 2))
+  def preprocess_img(img):
+    return np.transpose(img, (1, 0, 2))
 
   if args.prior_img is not None:
     img = preprocess_img(ndimage.imread(args.prior_img))

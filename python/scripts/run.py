@@ -79,14 +79,18 @@ def main():
     tracker_params.obs_weight_far = True
     tracker_params.smoother_post_fmm = False
     tracker_params.enable_smoothing = True
+    tracker_params.use_linear_downweight = True
+    tracker_params.use_min_to_combine = True
 
-    for a in [.1, 1.]:
+    for a in [.01, .1, 1., 10., 1e2, 1e3, 1e4, 1e5]:
       tracker_params.flow_rigidity_coeff = a
-      for b in [True, False]:
-        tracker_params.use_linear_downweight = b
-        for c in [True, False]:
-          tracker_params.use_min_to_combine = c
-          yield deepcopy(tracker_params)
+      yield deepcopy(tracker_params)
+
+#     for b in [True, False]:
+#       tracker_params.use_linear_downweight = b
+#       for c in [True, False]:
+#         tracker_params.use_min_to_combine = c
+#         yield deepcopy(tracker_params)
       # for c in [5., 8.]:
       #   tracker_params.smoother_phi_ignore_thresh = c
       #   for d in [1e-2, 1e-1]:

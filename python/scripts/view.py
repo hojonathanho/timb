@@ -67,6 +67,16 @@ if args.dump_to_mongo:
 
 
 i = 0
+use_bar = False
+try:
+  from progress.bar import Bar
+  use_bar = True
+except:
+  pass
+
+if use_bar:
+  bar = Bar(max=len(log))
+
 while i < len(log):
   entry = log[i]
 
@@ -86,12 +96,18 @@ while i < len(log):
 
   if args.dump_to_dir is not None:
     matplotlib.use('Agg')
-    print i
+    if use_bar:
+      bar.next()
+    else:
+      print i
     plt.savefig(os.path.join(args.dump_to_dir, '%05d.png' % i), bbox_inches='tight')
     i += 1
 
   elif args.dump_to_mongo:
-    print i
+    if use_bar:
+      bar.next()
+    else:
+      print i
     import uuid
     name = os.path.join('/tmp', str(uuid.uuid4()) + '.png')
     plt.savefig(name, bbox_inches='tight')
@@ -117,6 +133,9 @@ while i < len(log):
       i += 1
       if i == len(log):
         break
+
+if use_bar:
+  bar.finish()
 
 if args.dump_to_mongo:
   print db.experiments.insert(doc)
