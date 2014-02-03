@@ -110,6 +110,17 @@ static py::object py_apply_flow(const GridParams& gp, py::object py_phi, py::obj
 // }
 // BOOST_PYTHON_FUNCTION_OVERLOADS(py_march_from_zero_crossing_overloads, py_march_from_zero_crossing, 1, 3)
 
+static py::object py_compute_flowed_precision(const GridParams& gp, py::object py_precision_diag, py::object py_u_x, py::object py_u_y) {
+  DoubleField u_x(gp), u_y(gp);
+  from_numpy(py_u_x, u_x);
+  from_numpy(py_u_y, u_y);
+  VectorXd precision_diag;
+  util::from1darray(py_precision_diag, precision_diag);
+  VectorXd out;
+  compute_flowed_precision(precision_diag, u_x, u_y, out);
+  return util::toNdarray1(out.data(), out.size());
+}
+
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
   ExampleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
@@ -208,4 +219,5 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
   // py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
+  py::def("compute_flowed_precision", &py_compute_flowed_precision);
 }

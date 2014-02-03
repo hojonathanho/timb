@@ -1,5 +1,4 @@
 import numpy as np
-import interpolation as interp
 import timb
 import observation
 from scipy import ndimage
@@ -220,7 +219,7 @@ def test_image():
   gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
   tracker_params = timb.TrackerParams()
   tracker_params.flow_norm_coeff = 1e-6
-  tracker_params.flow_rigidity_coeff = 1e6
+  tracker_params.flow_rigidity_coeff = 1.
   tracker_params.observation_coeff = 1.
   tracker_params.agreement_coeff = 1.
   tracker_params.reweighting_iters = 5
@@ -308,7 +307,7 @@ def test_image():
       return sorted(l, key = alphanum_key)
 
     import os
-    files = [(args.input_dir + '/' + f) for f in os.listdir(args.input_dir) if os.path.isfile(args.input_dir + '/' + f)]
+    files = [(args.input_dir + '/' + f) for f in os.listdir(args.input_dir) if os.path.isfile(args.input_dir + '/' + f) and f.endswith('.png')]
     images = [preprocess_img(ndimage.imread(f)) for f in sorted_nicely(files)]
 
     for i, img in enumerate(images):
