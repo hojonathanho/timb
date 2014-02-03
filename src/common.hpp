@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <Eigen/Core>
+#include <Eigen/Sparse>
 #include <boost/shared_ptr.hpp>
 #include "logging.hpp"
 
@@ -17,6 +18,8 @@ using Eigen::MatrixXi;
 using Eigen::MatrixX2d;
 
 typedef vector<string> StrVec;
+typedef Eigen::SparseMatrix<double> SparseMatrixT;
+typedef Eigen::SparseSelfAdjointView<SparseMatrixT, Eigen::Lower> SparseSelfAdjointViewT;
 
 
 #define PRINT_AND_THROW(s) do {\

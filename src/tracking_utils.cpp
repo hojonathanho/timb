@@ -1,6 +1,6 @@
 #include "tracking_utils.hpp"
 
-#include "common.hpp"
+#include "expr.hpp"
 #include <vector>
 #include <boost/multi_array.hpp>
 #include <boost/heap/fibonacci_heap.hpp>
@@ -117,3 +117,73 @@ void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const Ma
 
 #undef IN_RANGE
 }
+
+
+void make_flow_operator(const DoubleField& u_x, const DoubleField& u_y, SparseMatrixT& out) {
+  const GridParams& gp = u_x.grid_params();
+  assert(u_y.grid_params() == gp);
+
+  // Make field dummy variables
+  AffExprField phi(gp);
+  VarFactory factory;
+  for (int i = 0; i < gp.nx; ++i) {
+    for (int j = 0; j < gp.ny; ++j) {
+      phi(i,j) = AffExpr(factory.make_var(""));
+    }
+  }
+
+  // Flow the variables
+  AffExprField flowed_phi(gp);
+  apply_flow(phi, u_x, u_y, flowed_phi);
+
+  // Build flow operator by looking at the resulting expressions after flowing
+  typedef Eigen::Triplet<double> Triplet;
+  std::vector<Triplet> triplets;
+  triplets.reserve(4 * gp.nx * gp.ny);
+
+  int k = 0;
+  for (int i = 0; i < gp.nx; ++i) {
+    for (int j = 0; j < gp.ny; ++j) {
+      const AffExpr &e = flowed_phi(i,j);
+      assert(close(e.constant, 0)); // better be linear
+
+      for (int z = 0; z < e.size(); ++z) {
+        int row = k;
+        int col = e.vars[z].rep->index;
+        double val = e.coeffs[z];
+        triplets.push_back(Triplet(row, col, val));
+      }
+
+      ++k;
+    }
+  }
+  out.setZero();
+  out.resize(gp.nx*gp.ny, gp.nx*gp.ny);
+  out.setFromTriplets(triplets.begin(), triplets.end());
+}
+
+void compute_flowed_precision(const VectorXd& precision_diag, const DoubleField& u_x, const DoubleField& u_y, VectorXd& out_diag) {
+  const GridParams& gp = u_x.grid_params();
+  assert(u_y.grid_params() == gp);
+
+  // negate flow
+  DoubleField uinv_x(gp), uinv_y(gp);
+  for (int i = 0; i < gp.nx; ++i) {
+    for (int j = 0; j < gp.ny; ++j) {
+      uinv_x(i,j) = -u_x(i,j);
+      uinv_y(i,j) = -u_y(i,j);
+    }
+  }
+
+  SparseMatrixT F;
+  make_flow_operator(uinv_x, uinv_y, F);
+
+  out_diag.resize(precision_diag.size());
+  for (int i = 0; i < precision_diag.size(); ++i) {
+    out_diag(i) = F.col(i).dot(F.col(i).cwiseProduct(precision_diag));
+  }
+
+  // out_diag = (F.transpose() * precision_diag.asDiagonal() * F).eval().diagonal();
+}
+
+

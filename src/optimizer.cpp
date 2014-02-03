@@ -56,9 +56,6 @@ static string status_to_str(OptStatus s) {
   }
 }
 
-typedef Eigen::SparseMatrix<double> SparseMatrixT;
-typedef Eigen::SparseSelfAdjointView<SparseMatrixT, Eigen::Lower> SparseSelfAdjointViewT;
-
 struct OptimizerImpl {
   OptParams m_params;
   VarFactory m_var_factory;
