@@ -3,11 +3,11 @@
 #include "expr.hpp"
 #include <vector>
 #include <boost/multi_array.hpp>
-#include <boost/heap/fibonacci_heap.hpp>
+//#include <boost/heap/fibonacci_heap.hpp>
 
 static inline double square(double x) { return x*x; }
 
-void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const MatrixXi* pignore_mask, MatrixXd& out) {
+/**void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const MatrixXi* pignore_mask, MatrixXd& out) {
   Eigen::MatrixXi started_as_zero(Eigen::MatrixXi::Zero(phi.rows(), phi.cols()));
   Eigen::MatrixXd sign_multiplier(Eigen::MatrixXd::Ones(phi.rows(), phi.cols()));
 
@@ -117,7 +117,7 @@ void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const Ma
 
 #undef IN_RANGE
 }
-
+*/
 
 void make_flow_operator(const DoubleField& u_x, const DoubleField& u_y, SparseMatrixT& out) {
   const GridParams& gp = u_x.grid_params();

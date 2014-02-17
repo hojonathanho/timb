@@ -31,8 +31,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 #set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 
 # external libraries
-find_package(Boost 1.49 COMPONENTS system python filesystem program_options REQUIRED)
-find_package(Cholmod)
+find_package(Boost 1.46 COMPONENTS system python filesystem program_options REQUIRED)
+#find_package(Cholmod)
 find_package(BLAS)
 find_package(LAPACK)
 # libraries packaged with this source tree

@@ -8,7 +8,7 @@ using std::map;
 #include <boost/timer.hpp>
 #include <boost/format.hpp>
 
-#include <Eigen/CholmodSupport>
+//#include <Eigen/CholmodSupport>
 #include <Eigen/Eigenvalues>
 
 OptParams::OptParams() :
@@ -288,8 +288,8 @@ struct OptimizerImpl {
     SparseMatrixT fjac(num_residuals(), num_vars());
     SparseMatrixT scaling(num_vars(), num_vars());
 
-    Eigen::CholmodDecomposition<SparseMatrixT> solver;
-    // Eigen::SimplicialLDLT<SparseMatrixT> solver;
+    //Eigen::CholmodDecomposition<SparseMatrixT> solver;
+     Eigen::SimplicialLDLT<SparseMatrixT> solver;
     // Temporary per-iteration data
     SparseMatrixT jtj(num_vars(), num_vars());
     SparseMatrixT lin_lhs(num_vars(), num_vars());
