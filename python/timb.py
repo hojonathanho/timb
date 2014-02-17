@@ -38,8 +38,6 @@ class TrackerParams(object):
     self.reweighting_iters = 5
     self.max_inner_iters = 10
 
-    self.flow_precision_properly = True
-
     # Observation parameters
     self.tsdf_trunc_dist = 10.
     self.sensor_mode = 'accurate'
@@ -123,10 +121,7 @@ class TrackingOptimizationProblem(object):
     for i in range(self.params.reweighting_iters):
       state, opt_result = _optimize_once(curr_state)
 
-      if self.params.flow_precision_properly:
-        flowed_prev_weights = flow_weight_field(self.gp, self.prev_weights, state.u_x, state.u_y)
-      else:
-        flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)
+      flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)
       self.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
 
       results.append(state)
@@ -166,10 +161,7 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_t
     problem_data['result'], problem_data['opt_result'] = result, opt_result
 
   # Flow previous weight to get new weight
-  if tracker_params.flow_precision_properly:
-    flowed_init_weight = flow_weight_field(grid_params, init_weight, result.u_x, result.u_y)
-  else:
-    flowed_init_weight = apply_flow(grid_params, init_weight, result.u_x, result.u_y)
+  flowed_init_weight = apply_flow(grid_params, init_weight, result.u_x, result.u_y)
   new_weight = flowed_init_weight + obs_weight
   if return_full:
     problem_data['new_weight'] = new_weight
@@ -258,11 +250,6 @@ def threshold_trusted(tracker_params, phi, weight, always_trust_mask=None):
 
 def threshold_trusted_for_view(tracker_params, phi, weight):
   return weight >= .5
-
-def flow_weight_field(grid_params, w, u_x, u_y):
-  out = compute_flowed_precision(grid_params, w.ravel(), u_x, u_y).reshape(w.shape)
-  print out.min()
-  return out
 
 ########## Utility functions ##########
 

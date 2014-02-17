@@ -66,7 +66,7 @@ public:
     bx = clip(bx, 0, m_grid_params.nx - 1);
     ay = clip(ay, 0, m_grid_params.ny - 1);
     by = clip(by, 0, m_grid_params.ny - 1);
-    double dx = std::max(i - ax, 0.), dy = std::max(j - ay, 0.);
+    double dx = clip(i - ax, 0., 1.), dy = clip(j - ay, 0., 1.);
     return (1.-dy)*((1.-dx)*get(ax,ay) + dx*get(bx,ay)) + dy*((1.-dx)*get(ax,by) + dx*get(bx,by));
   }
 
