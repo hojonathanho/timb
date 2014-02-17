@@ -145,6 +145,7 @@ void make_flow_operator(const DoubleField& u_x, const DoubleField& u_y, SparseMa
   for (int i = 0; i < gp.nx; ++i) {
     for (int j = 0; j < gp.ny; ++j) {
       const AffExpr &e = flowed_phi(i,j);
+      std::cout << i << ' ' << j << ": " << e << std::endl;
       assert(close(e.constant, 0)); // better be linear
 
       for (int z = 0; z < e.size(); ++z) {
@@ -178,12 +179,20 @@ void compute_flowed_precision(const VectorXd& precision_diag, const DoubleField&
   SparseMatrixT F;
   make_flow_operator(uinv_x, uinv_y, F);
 
-  out_diag.resize(precision_diag.size());
-  for (int i = 0; i < precision_diag.size(); ++i) {
-    out_diag(i) = F.col(i).dot(F.col(i).cwiseProduct(precision_diag));
-  }
+  // out_diag.resize(precision_diag.size());
+  // for (int i = 0; i < precision_diag.size(); ++i) {
+  //   out_diag(i) = F.col(i).dot(F.col(i).cwiseProduct(precision_diag));
+  // }
 
-  // out_diag = (F.transpose() * precision_diag.asDiagonal() * F).eval().diagonal();
+  out_diag = (F.transpose() * precision_diag.asDiagonal() * F).eval().diagonal();
 }
 
+void compute_flowed_precision_direct(const VectorXd& precision_diag, const DoubleField& u_x, const DoubleField& u_y, VectorXd& out_diag) {
+  const GridParams& gp = u_x.grid_params();
+  assert(u_y.grid_params() == gp);
 
+  SparseMatrixT F;
+  make_flow_operator(u_x, u_y, F);
+
+  out_diag = (F * precision_diag.asDiagonal() * F.transpose()).eval().diagonal();
+}
