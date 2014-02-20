@@ -29,7 +29,7 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   opt.add_cost(obs_zc_cost)
   
   opt_result = opt.optimize(np.array([init_x, init_y, init_theta]))
-  print opt_result
+  print opt_result['x']
   return opt_result
 
 
