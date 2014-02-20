@@ -84,11 +84,9 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
   void linearize(const VectorXd& x, CostFuncLinearization& lin) {
     /**
      * Returns a linearization for each of the residual terms.
-     * '3' for : x (col 0), y (col 1), theta (col 2)
      **/
     assert(m_zero_points.rows() > 0);
     MatrixX2d tf_zero_points = transform_zero_points(x);
-
 
     for (int i = 0; i < m_zero_points.rows(); ++i) {
       if (is_in_grid(tf_zero_points.row(i))) {

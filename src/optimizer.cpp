@@ -255,7 +255,7 @@ struct OptimizerImpl {
       LOG_WARN("Numerical derivative checking enabled!");
     }
     if (m_params.keep_results_over_iterations) {
-      LOG_WARN("Saving values over iterations!")
+      LOG_WARN("Saving values over iterations!");
     }
 
     m_cost2lin.clear();

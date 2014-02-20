@@ -17,8 +17,8 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   """
   assert isinstance(grid_params, GridParams)
   opt = Optimizer()
-  opt.params().check_linearizations         = True
-  opt.params().keep_results_over_iterations = True
+  opt.params().check_linearizations         = False
+  opt.params().keep_results_over_iterations = False
   opt.params().max_iter = 10
   opt.params().approx_improve_rel_tol = 1e-10
   
@@ -39,7 +39,7 @@ def grid_to_xy(i,j, grid_params):
 
 def test_pose_opt():
   
-  TSDF_TRUNC = 10
+  TSDF_TRUNC = 1
   SIZE = 5
   WORLD_MIN = (-1., -1.)
   WORLD_MAX = (1., 1.)
@@ -48,21 +48,27 @@ def test_pose_opt():
 
   state0 = np.array([
     [0, 0, 0, 0, 0],
-    [0, 1, 1, 0, 0],
-    [0, 1, 1, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0],
     [0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0]
-  ], dtype=bool)
-
+  ])
+  n = 5
+  for i in xrange(n):
+    for j in xrange(n):
+      state0[i,j] = np.abs(i-n/2) + np.abs(j-n/2)
+  
   state1 = np.array([
     [0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0],
-    [0, 0, 1, 1, 0],
-    [0, 0, 1, 1, 0],
+    [0, 0, 0, 1, 0],
+    [0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0]
   ], dtype=bool)
   
   tsdf0, sdf0, depth0 = state_to_tsdf(state0, TSDF_TRUNC, return_all=True)
+  #tsdf0 /= 100.
+  tsdf0 = state0
   print "tsdf0"
   print tsdf0
   plt.imshow(tsdf0)
@@ -82,4 +88,3 @@ def test_pose_opt():
 
 if __name__=="__main__":
   test_pose_opt()
-
