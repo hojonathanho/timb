@@ -32,8 +32,8 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
    *   		 ***CURRENTLY THIS COST IMPLEMENTS solving only for [x,y]***
    *
    ***/
-	const GridParams &m_gp;   // TSDF grid parameters
-	const DoubleField &m_phi; // last iterate values of TSDF
+	const GridParams m_gp;   // TSDF grid parameters
+	const DoubleField m_phi; // last iterate values of TSDF
 	MatrixX2d m_zero_points;  // points where phi should be zero : these come from camera observations
   Var m_dx, m_dy, m_dth; // optimization variables
 
@@ -43,7 +43,8 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
                                        const Var &dy,
                                        const Var &dth)
     : m_phi(phi), m_gp(phi.grid_params()), m_dx(dx), m_dy(dy), m_dth(dth)
-  { }
+  {
+  }
 
   string name() const { return "rigid_obs_zc"; }
   int num_residuals() const { return m_zero_points.rows(); }
@@ -71,10 +72,12 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
     MatrixX2d tf_zero_points = untransform_zero_points(x);
 
     for (int i = 0; i < tf_zero_points.rows(); ++i) {
-      if (is_in_grid(tf_zero_points.row(i)))
+      if (is_in_grid(tf_zero_points.row(i))) {
           out(i) = m_phi.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1));
-      else
+          std::cout << "at pt : " << tf_zero_points.row(i) << " | eval = " << out(i)  << std::endl;
+      } else {
           out(i) = 0;
+      }
     }
   }
 
@@ -90,7 +93,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
       if (is_in_grid(tf_zero_points.row(i))) {
         DoubleField::ExprVec J_xy = m_phi.grad_xy(tf_zero_points(i,0), tf_zero_points(i,1));
         double f0   = m_phi.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1));
-        lin.set_by_expr(i, AffExpr(f0) + J_xy.x*(m_dx - x(0)) + J_xy.y*(m_dy- x(1)));
+        lin.set_by_expr(i, AffExpr(f0) - J_xy.x*(m_dx - x(0)) - J_xy.y*(m_dy- x(1)));
       } else {
         lin.set_by_expr(i, AffExpr(0));
       }

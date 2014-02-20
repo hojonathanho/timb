@@ -238,6 +238,7 @@ BOOST_PYTHON_MODULE(ctimb) {
 
   py::class_<RigidObservationZeroCrossingCost, RigidObservationZeroCrossingCostPtr, py::bases<CostFunc> >("RigidObservationZeroCrossingCost",
       py::init<const DoubleField&, const Var&, const Var&, const Var&>())
+      .def("set_zero_points", &RigidObservationZeroCrossingCost::py_set_zero_points)
     ;
   py::def("make_double_field", &py_make_double_field);
 
