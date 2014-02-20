@@ -17,7 +17,7 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   """
   assert isinstance(grid_params, GridParams)
   opt = Optimizer()
-  opt.params().check_linearizations         = False
+  opt.params().check_linearizations         = True
   opt.params().keep_results_over_iterations = True
   opt.params().max_iter = 10
   opt.params().approx_improve_rel_tol = 1e-10
@@ -29,7 +29,6 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   opt.add_cost(obs_zc_cost)
   
   opt_result = opt.optimize(np.array([init_x, init_y, init_theta]))
-  print opt_result['x']
   return opt_result
 
 

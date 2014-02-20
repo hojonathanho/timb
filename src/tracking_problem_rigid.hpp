@@ -93,7 +93,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
       if (is_in_grid(tf_zero_points.row(i))) {
         DoubleField::ExprVec J_xy = m_phi.grad_xy(tf_zero_points(i,0), tf_zero_points(i,1));
         double f0   = m_phi.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1));
-        lin.set_by_expr(i, AffExpr(f0) - J_xy.x*(m_dx - x(0)) - J_xy.y*(m_dy- x(1)));
+        lin.set_by_expr(i, AffExpr(f0) - 2*J_xy.x*(m_dx - x(0)) - 2*J_xy.y*(m_dy- x(1)));
       } else {
         lin.set_by_expr(i, AffExpr(0));
       }
