@@ -53,7 +53,7 @@ def test_pose_opt():
     [0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0]
   ], dtype=bool)
-  
+
   state1 = np.array([
     [0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0],
@@ -65,8 +65,8 @@ def test_pose_opt():
   tsdf0, sdf0, depth0 = state_to_tsdf(state0, TSDF_TRUNC, return_all=True)
   print "tsdf0"
   print tsdf0
-  #plt.imshow(tsdf0)
-  #plt.show()
+  plt.imshow(tsdf0)
+  plt.show()
   tsdf1, sdf1, depth1 = state_to_tsdf(state1, TSDF_TRUNC, return_all=True)
   
   obs_ij = np.c_[np.arange(len(depth1)), depth1]
@@ -83,7 +83,3 @@ def test_pose_opt():
 if __name__=="__main__":
   test_pose_opt()
 
-  
-  
-  
-  

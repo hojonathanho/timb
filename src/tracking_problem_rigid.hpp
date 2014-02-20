@@ -69,7 +69,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
      *        the residual returned is zero.
      **/
     assert(m_zero_points.rows() > 0);
-    MatrixX2d tf_zero_points = untransform_zero_points(x);
+    MatrixX2d tf_zero_points = transform_zero_points(x);
 
     for (int i = 0; i < tf_zero_points.rows(); ++i) {
       if (is_in_grid(tf_zero_points.row(i))) {
@@ -87,14 +87,15 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
      * '3' for : x (col 0), y (col 1), theta (col 2)
      **/
     assert(m_zero_points.rows() > 0);
-    MatrixX2d tf_zero_points = untransform_zero_points(x);
+    MatrixX2d tf_zero_points = transform_zero_points(x);
+
 
     for (int i = 0; i < m_zero_points.rows(); ++i) {
       if (is_in_grid(tf_zero_points.row(i))) {
         DoubleField::ExprVec J_xy = m_phi.grad_xy(tf_zero_points(i,0), tf_zero_points(i,1));
         double f0   = m_phi.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1));
-        lin.set_by_expr(i, AffExpr(f0) - 2*J_xy.x*(m_dx - x(0)) - 2*J_xy.y*(m_dy- x(1)));
-      } else {
+        lin.set_by_expr(i, AffExpr(f0) + J_xy.x/m_gp.eps_x*(m_dx - x(0)) + J_xy.y/m_gp.eps_y*(m_dy- x(1)));
+      }else {
         lin.set_by_expr(i, AffExpr(0));
       }
     }
@@ -102,10 +103,10 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
 
 private:
 
-  MatrixX2d untransform_zero_points(const VectorXd& delta) {
+  MatrixX2d transform_zero_points(const VectorXd& delta) {
     MatrixX2d transformed_zero_points = m_zero_points;
     RowVector2d  delta_xy  = delta.head(2);
-    transformed_zero_points.rowwise() -= delta_xy;
+    transformed_zero_points.rowwise() += delta_xy;
     return transformed_zero_points;
   }
 
