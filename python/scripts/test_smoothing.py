@@ -58,7 +58,7 @@ def main_single_line():
   plt.show()
 
 
-from ctimbpy import *
+from ctimb import *
 def smooth_by_optimization(phi, obs, obs_weights, mode='laplacian'):
   assert phi.shape[0] == phi.shape[1]
   assert mode in ['laplacian', 'gradient', 'tps']

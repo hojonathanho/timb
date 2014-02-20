@@ -110,7 +110,7 @@ def _depth_to_weights(depth, trunc_dist, filter_radius, use_linear_downweight, u
   return w
 
 
-def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
+def state_to_tsdf(state, trunc_dist=10, mode='accurate', return_all=False):
   '''
   '''
 
@@ -224,9 +224,9 @@ def test_simple():
   ], dtype=bool)
   tsdf = state_to_tsdf(state)
   #plt.imshow(state)
-  # plt.contourf(tsdf, cmap='bwr')
+  plt.contourf(tsdf, cmap='bwr')
   print tsdf
-  # plt.show()
+  plt.show()
 
   assert np.allclose(tsdf, np.array(
     [[ 10.,  10.,  10.,  10.,  10.],
@@ -237,11 +237,11 @@ def test_simple():
   ))
 
 
-def test_load_img():
+def test_load_img(img_fname):
   import matplotlib.pyplot as plt
   from scipy import ndimage
 
-  img = ndimage.imread('/Users/jonathan/code/timb/data/smallbear2.png')
+  img = ndimage.imread(img_fname)
 
   img = ndimage.interpolation.rotate(img, angle=180, cval=255, order=1, reshape=False)
   plt.imshow(img).set_interpolation('nearest')
@@ -352,6 +352,6 @@ def test_rotate():
 
 
 if __name__ == '__main__':
-  # test_simple()
-  # test_load_img()
-  test_rotate()
+  #test_simple()
+  test_load_img('/home/ankush/sandbox444/timb/data/smallbear2.png')
+  #test_rotate()

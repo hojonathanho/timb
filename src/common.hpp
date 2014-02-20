@@ -13,6 +13,9 @@ using std::vector;
 using std::string;
 
 using Eigen::VectorXd;
+using Eigen::Vector2d;
+using Eigen::RowVector2d;
+
 using Eigen::MatrixXd;
 using Eigen::MatrixXi;
 using Eigen::MatrixX2d;
@@ -29,6 +32,7 @@ typedef Eigen::SparseSelfAdjointView<SparseMatrixT, Eigen::Lower> SparseSelfAdjo
   ss << s;\
   throw std::runtime_error(ss.str());\
 } while (0)
+
 #define FAIL_IF_FALSE(expr) if (!(expr)) {\
   PRINT_AND_THROW( "expected true: " #expr);\
 }

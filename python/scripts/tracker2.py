@@ -33,9 +33,9 @@ def test1():
   gp = timb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
 
   # initial state: zero precision
-  init_phi = np.empty((SIZE, SIZE)); init_phi.fill(-1.)
+  init_phi   = np.empty((SIZE, SIZE)); init_phi.fill(-1.)
   init_omega = np.zeros((SIZE, SIZE))
-  obs_mask = np.array([
+  obs_mask   = np.array([
     [1, 1, 0, 0, 0],
     [1, 1, 0, 0, 0],
     [1, 1, 0, 0, 0],
@@ -211,7 +211,7 @@ def test_image():
   SIZE = 100
   FIRST_OBS_EXTRA_WEIGHT = 2
   START_ANGLE = 0
-  INCR_ANGLE = 5
+  INCR_ANGLE  = 5
 
   # SIZE = tsdf.shape[0]
   WORLD_MIN = (0., 0.)

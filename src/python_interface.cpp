@@ -5,9 +5,11 @@
 #include "common.hpp"
 
 #include "tracking_problem.hpp"
+#include "tracking_problem_rigid.hpp"
 #include "tracking_utils.hpp"
 #include "logging.hpp"
 #include "numpy_utils.hpp"
+#include "grid_numpy_utils.hpp"
 #include "optimizer.hpp"
 
 namespace py = boost::python;
@@ -130,6 +132,12 @@ static string py_print_gridparams(const GridParams* gp) {
     % gp->xmin % gp->xmax % gp->nx % gp->ymin % gp->ymax % gp->ny).str();
 }
 
+DoubleField py_make_double_field(const GridParams& gp, py::object py_gdata) {
+  DoubleField dbf(gp);
+  from_numpy(py_gdata, dbf);
+  return dbf;
+}
+
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
   ExampleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
@@ -209,6 +217,8 @@ BOOST_PYTHON_MODULE(ctimb) {
     ;
 
   py::class_<VarField>("VarField", py::no_init);
+  py::class_<DoubleField>("DoubleField", py::no_init);
+
 
   py::class_<ExampleCost, ExampleCostPtr, py::bases<CostFunc> >("ExampleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
@@ -225,6 +235,11 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::class_<AgreementCost, AgreementCostPtr, py::bases<CostFunc> >("AgreementCost", py::init<const VarField&, const VarField&, const VarField&>())
     .def("set_prev_phi_and_weights", &AgreementCost::py_set_prev_phi_and_weights)
     ;
+
+  py::class_<RigidObservationZeroCrossingCost, RigidObservationZeroCrossingCostPtr, py::bases<CostFunc> >("RigidObservationZeroCrossingCost",
+      py::init<const DoubleField&, const Var&, const Var&, const Var&>())
+    ;
+  py::def("make_double_field", &py_make_double_field);
 
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
