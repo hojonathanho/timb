@@ -48,7 +48,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
 
   string name() const { return "rigid_obs_zc"; }
   int num_residuals() const { return m_zero_points.rows(); }
-  bool is_linear() const { return true; }
+  bool is_linear() const { return false; }
 
 
   void set_zero_points(const MatrixX2d& zero_points) {

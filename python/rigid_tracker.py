@@ -39,42 +39,29 @@ def grid_to_xy(i,j, grid_params):
 
 def test_pose_opt():
   
-  TSDF_TRUNC = 1
-  SIZE = 5
-  WORLD_MIN = (-1., -1.)
-  WORLD_MAX = (1., 1.)
+  TSDF_TRUNC = 50
+  SIZE = 20
+  WORLD_MIN = (0., 0)
+  WORLD_MAX = (SIZE-1, SIZE-1)
   gp = ctimb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
   print "grid params ", gp
 
-  state0 = np.array([
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0]
-  ])
-  n = 5
-  for i in xrange(n):
-    for j in xrange(n):
-      state0[i,j] = np.abs(i-n/2) + np.abs(j-n/2)
-  
-  state1 = np.array([
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 1, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0]
-  ], dtype=bool)
-  
+  state0 = np.zeros((SIZE,SIZE), dtype=bool)
+  state0[10:15, 10:14] = np.ones((5,4), dtype=bool)
+  state1 = np.zeros((SIZE,SIZE), dtype=bool)
+  state1[10:15, 5:9] = np.ones((5,4), dtype=bool)
+
+  print state0, state1
+
+
   tsdf0, sdf0, depth0 = state_to_tsdf(state0, TSDF_TRUNC, return_all=True)
-  #tsdf0 /= 100.
-  tsdf0 = state0
-  print "tsdf0"
-  print tsdf0
-  plt.imshow(tsdf0)
-  plt.show()
   tsdf1, sdf1, depth1 = state_to_tsdf(state1, TSDF_TRUNC, return_all=True)
-  
+  plt.subplot(121)
+  plt.imshow(tsdf0)
+  plt.subplot(122)
+  plt.imshow(tsdf1)
+  plt.show()
+
   obs_ij = np.c_[np.arange(len(depth1)), depth1]
   obs_xy = np.empty(obs_ij.shape)
   for r in xrange(len(obs_xy)):
