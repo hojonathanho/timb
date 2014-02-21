@@ -20,7 +20,7 @@ class RigidTrackerParams(object):
 
     self.obs_weight_epsilon = 0.
     self.obs_weight_delta = 5.
-    self.obs_weight_filter_radius = 5
+    self.obs_weight_filter_radius = 2
     self.obs_weight_far = True
 
     self.use_linear_downweight = True
@@ -60,7 +60,7 @@ def update_last_tsdf(old_phi, grid_params, dx,dy,dth):
 
 
 def average_tsdfs(phi0, w0, phi1, w1):
-  phi_n = phi0*w0 + phi1*w1 / (w0 + w1)
+  phi_n = phi0*w0 + phi1*w1 / (w0 + w1 + np.spacing(0))
   w_n   = w0 + w1
   return phi_n, w_n
 
@@ -104,8 +104,7 @@ def run_one_rigid_step(grid_params, tracker_params, obs_depth, obs_weight, obs_a
       return new_phi, new_weight, problem_data
     else:
       return new_phi, new_weight
-    
-    
+   
 
 def test_one_step():
 
@@ -130,10 +129,12 @@ def test_one_step():
   tsdf0, sdf0, _, _, _ = observation_from_full_state(state0, tracker_params)
   w0 = np.zeros_like(state0)
   tsdf1, sdf1, depth1, w1, _ = observation_from_full_state(state1, tracker_params)
-  w1 = np.ones_like(state1)
+  #w1 = np.ones_like(state1)
+  ## TODO : fix the weights returned above
   
   ## optimize for camera pose and find the new sdf:
   tsdf1_opt, w1_opt = run_one_rigid_step(gp, tracker_params, depth1, w1, None, sdf0, w0, return_full=False)
+  np.set_printoptions(3)
 
   plt.subplot(321)
   plt.imshow(state0)
@@ -146,14 +147,20 @@ def test_one_step():
   plt.contour(tsdf0, levels=[0])
   plt.title('tsdf 0')
   plt.subplot(324)
-  plt.imshow(tsdf1_opt, cmap='bwr').set_interpolation('nearest')
-  plt.contour(tsdf1_opt, levels=[0])
-  plt.title('tsdf 1 opt')
-  plt.subplot(325)
   plt.imshow(tsdf1, cmap='bwr').set_interpolation('nearest')
   plt.contour(tsdf1, levels=[0])
   plt.title('tsdf 1 true')
 
+  plt.subplot(325)
+  plt.imshow(tsdf1_opt, cmap='bwr').set_interpolation('nearest')
+  plt.contour(tsdf1_opt, levels=[0])
+  plt.title('tsdf 1 opt')
+  
+  plt.subplot(326)
+  plt.imshow(w1_opt, cmap='bwr').set_interpolation('nearest')
+  plt.title('weight 1 opt')
+  
+  
   plt.show()
 
 
