@@ -138,6 +138,10 @@ DoubleField py_make_double_field(const GridParams& gp, py::object py_gdata) {
   return dbf;
 }
 
+py::object py_apply_rigid_transform(const DoubleField &phi, double dx, double dy, double dth) {
+  return to_numpy(apply_rigid_transform(phi, dx, dy, dth));
+}
+
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
   ExampleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
@@ -241,6 +245,8 @@ BOOST_PYTHON_MODULE(ctimb) {
       .def("set_zero_points", &RigidObservationZeroCrossingCost::py_set_zero_points)
     ;
   py::def("make_double_field", &py_make_double_field);
+  py::def("apply_rigid_transform", &py_apply_rigid_transform);
+
 
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);

@@ -108,9 +108,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
 private:
 
   MatrixX2d transform_zero_points(const VectorXd& tf_x) const {
-    /**
-     * Rotate and translate observation points.
-     */
+    /** Rotate and translate observation points.*/
     double delta_th = tf_x(2);
     RowVector2d delta_xy = tf_x.head(2);
 
@@ -145,7 +143,6 @@ private:
   VectorXd grad_theta(const VectorXd& x) const {
     /**
     * Calculates the gradient wrt rotation angle theta at the observation pts.
-    * Center of rotation is at the center of the grid.
     **/
     static const double delta = 1e-5;
     VectorXd p_x = x; p_x(2) += delta;
@@ -163,5 +160,25 @@ private:
 
 };
 typedef boost::shared_ptr<RigidObservationZeroCrossingCost> RigidObservationZeroCrossingCostPtr;
+
+
+
+DoubleField apply_rigid_transform(const DoubleField &phi, double dx, double dy, double dth) {
+  /** returns a new sdf after applying a rigid transform [dX,dY, dTH] on the old sdf PHI. */
+  Matrix2d rot;
+  rot << cos(dth), sin(dth),
+        -sin(dth), cos(dth);
+
+  DoubleField new_phi(phi.grid_params());
+  for (int i=0; i < phi.grid_params().nx; i++)
+    for (int j=0; j < phi.grid_params().ny; j++) {
+      std::pair<double, double> xy = phi.grid_params().to_xy(i,j);
+      Vector2d vec_xy; vec_xy << xy.first, xy.second;
+      vec_xy = rot*vec_xy;
+      vec_xy += Vector2d(dx,dy);
+      new_phi(i,j) = phi.eval_xy(vec_xy.x(), vec_xy.y());
+    }
+  return new_phi;
+}
 
 #endif

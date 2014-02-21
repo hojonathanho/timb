@@ -17,7 +17,7 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   """
   assert isinstance(grid_params, GridParams)
   opt = Optimizer()
-  opt.params().check_linearizations         = True
+  opt.params().check_linearizations         = False
   opt.params().keep_results_over_iterations = False
   opt.params().max_iter = 100
   opt.params().approx_improve_rel_tol = 1e-10
@@ -29,8 +29,11 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   opt.add_cost(obs_zc_cost)
   
   opt_result = opt.optimize(np.array([init_x, init_y, init_theta]))
-  return opt_result
-
+  dx,dy,dth  = opt_result['x']
+  new_phi = apply_rigid_transform(tsdf, dx,dy,dth)
+  
+  return opt_result, new_phi
+  
 
 def grid_to_xy(i,j, grid_params):
   return (grid_params.xmin + i*grid_params.eps_x, 
@@ -50,27 +53,46 @@ def test_pose_opt():
   state0[10:15, 10:14] = np.ones((5,4), dtype=bool)
   state1 = np.zeros((SIZE,SIZE), dtype=bool)
   state1[10:15, 5:9] = np.ones((5,4), dtype=bool)
-
-  print state0, state1
+  #print state0, state1
 
 
   tsdf0, sdf0, depth0 = state_to_tsdf(state0, TSDF_TRUNC, return_all=True)
   tsdf1, sdf1, depth1 = state_to_tsdf(state1, TSDF_TRUNC, return_all=True)
-  plt.subplot(121)
-  plt.imshow(state0)
-  plt.subplot(122)
-  plt.imshow(state1)
-  plt.show()
-
+  
   obs_ij = np.c_[np.arange(len(depth1)), depth1]
   obs_xy = np.empty(obs_ij.shape)
   for r in xrange(len(obs_xy)):
     obs_xy[r] = grid_to_xy(obs_ij[r,0], obs_ij[r,1], gp)
     
-  print "depths : "
-  print obs_xy
+  #print "depths : "
+  #print obs_xy
 
-  print "opt pose : ", optimize_sdf_transform(tsdf0, gp, obs_xy)
+  opt_res, tsdf1_opt = optimize_sdf_transform(tsdf0, gp, obs_xy)
+
+  plt.subplot(321)
+  plt.imshow(state0)
+  plt.title('state 0')
+  plt.subplot(322)
+  plt.imshow(state1)
+  plt.title('state 1')
+  plt.subplot(323)
+  plt.imshow(tsdf0, cmap='bwr').set_interpolation('nearest')
+  plt.contour(tsdf0, levels=[0])
+  plt.title('tsdf 0')
+  plt.subplot(324)
+  plt.imshow(tsdf1_opt, cmap='bwr').set_interpolation('nearest')
+  plt.contour(tsdf1_opt, levels=[0])
+  plt.title('tsdf 1 opt')
+  plt.subplot(325)
+  plt.imshow(tsdf1, cmap='bwr').set_interpolation('nearest')
+  plt.contour(tsdf1, levels=[0])
+  plt.title('tsdf 1 true')
+  
+
+
+  plt.show()
+
+  print "opt pose : ", opt_res 
 
 
 if __name__=="__main__":
