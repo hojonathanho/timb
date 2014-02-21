@@ -19,6 +19,7 @@ using Eigen::RowVector2d;
 using Eigen::MatrixXd;
 using Eigen::MatrixXi;
 using Eigen::MatrixX2d;
+using Eigen::Matrix2d;
 
 typedef vector<string> StrVec;
 typedef Eigen::SparseMatrix<double> SparseMatrixT;

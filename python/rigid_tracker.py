@@ -17,9 +17,9 @@ def optimize_sdf_transform(phi, grid_params, obs_zero_points, init_x=0, init_y=0
   """
   assert isinstance(grid_params, GridParams)
   opt = Optimizer()
-  opt.params().check_linearizations         = False
+  opt.params().check_linearizations         = True
   opt.params().keep_results_over_iterations = False
-  opt.params().max_iter = 10
+  opt.params().max_iter = 100
   opt.params().approx_improve_rel_tol = 1e-10
   
   tsdf = make_double_field(grid_params, phi)
@@ -57,9 +57,9 @@ def test_pose_opt():
   tsdf0, sdf0, depth0 = state_to_tsdf(state0, TSDF_TRUNC, return_all=True)
   tsdf1, sdf1, depth1 = state_to_tsdf(state1, TSDF_TRUNC, return_all=True)
   plt.subplot(121)
-  plt.imshow(tsdf0)
+  plt.imshow(state0)
   plt.subplot(122)
-  plt.imshow(tsdf1)
+  plt.imshow(state1)
   plt.show()
 
   obs_ij = np.c_[np.arange(len(depth1)), depth1]
@@ -69,7 +69,7 @@ def test_pose_opt():
     
   print "depths : "
   print obs_xy
-  
+
   print "opt pose : ", optimize_sdf_transform(tsdf0, gp, obs_xy)
 
 
