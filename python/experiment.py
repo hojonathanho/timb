@@ -3,6 +3,7 @@ import observation
 import os
 from scipy import ndimage
 import timb
+import rigid_tracker
 
 
 class Experiment(object):
@@ -134,6 +135,7 @@ class ImageSequence(Experiment):
 
 
 def run_experiment(ex, tracker_params, callback=None, iter_cap=None):
+  assert isinstance(tracker_params, timb.TrackerParams)
   ex.set_tracker_params(tracker_params)
   grid_params = ex.get_grid_params()
 
@@ -159,8 +161,8 @@ def run_experiment(ex, tracker_params, callback=None, iter_cap=None):
     )
     iter_data['new_phi'], iter_data['new_weight'], iter_data['problem_data'] = new_phi, new_weight, problem_data
 
-    iter_data['trusted'] = trusted = timb.threshold_trusted(tracker_params, new_phi, new_weight)
-    iter_data['output'] = np.where(trusted, new_phi, np.nan)
+    # iter_data['trusted'] = trusted = timb.threshold_trusted(tracker_params, new_phi, new_weight)
+    # iter_data['output'] = np.where(trusted, new_phi, np.nan)
 
     if callback is not None:
       callback(i, iter_data)
@@ -169,3 +171,44 @@ def run_experiment(ex, tracker_params, callback=None, iter_cap=None):
     curr_phi, curr_weight = new_phi, new_weight
 
   return experiment_log
+
+
+def run_experiment_rigid(ex, rigid_tracker_params, callback=None, iter_cap=None):
+  assert isinstance(rigid_tracker_params, rigid_tracker.RigidTrackerParams)
+  ex.set_tracker_params(rigid_tracker_params)
+  grid_params = ex.get_grid_params()
+
+  curr_phi, curr_weight = ex.get_prior()
+
+  experiment_log = []
+
+  num = ex.num_observations() if iter_cap is None else min(ex.num_observations(), iter_cap)
+  for i in range(num):
+    iter_data = {}
+
+    iter_data['curr_phi'], iter_data['curr_weight'] = curr_phi, curr_weight
+
+    obs_tsdf, obs_sdf, obs_depth, obs_weight, obs_trust_mask = ex.get_observation(i)
+    iter_data['state'] = ex.get_state(i)
+    iter_data['obs_tsdf'], iter_data['obs_sdf'], iter_data['obs_depth'], iter_data['obs_weight'], iter_data['obs_trust_mask'] = obs_tsdf, obs_sdf, obs_depth, obs_weight, obs_trust_mask
+
+
+    new_phi, new_weight, obs_xy, problem_data = rigid_tracker.run_one_rigid_step(
+      grid_params, rigid_tracker_params,
+      obs_depth, obs_tsdf, obs_weight,
+      curr_phi, curr_weight,
+      return_full=True
+    )
+    iter_data['new_phi'], iter_data['new_weight'], iter_data['problem_data'] = new_phi, new_weight, problem_data
+
+    # iter_data['trusted'] = trusted = timb.threshold_trusted(rigid_tracker_params, new_phi, new_weight)
+    # iter_data['output'] = np.where(trusted, new_phi, np.nan)
+
+    if callback is not None:
+      callback(i, iter_data)
+
+    experiment_log.append(iter_data)
+    curr_phi, curr_weight = new_phi, new_weight
+
+  return experiment_log
+
