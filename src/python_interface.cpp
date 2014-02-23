@@ -94,6 +94,14 @@ static py::object py_apply_flow(const GridParams& gp, py::object py_phi, py::obj
   apply_flow(phi, u_x, u_y, flowed_phi);
   return to_numpy(flowed_phi);
 }
+static py::object py_apply_flow_to_weights(const GridParams& gp, py::object py_phi, py::object py_u_x, py::object py_u_y) {
+  DoubleField phi(gp), u_x(gp), u_y(gp), flowed_phi(gp);
+  from_numpy(py_phi, phi);
+  from_numpy(py_u_x, u_x);
+  from_numpy(py_u_y, u_y);
+  apply_flow_to_weights(phi, u_x, u_y, flowed_phi);
+  return to_numpy(flowed_phi);
+}
 
 // static py::object py_march_from_zero_crossing(py::object py_phi, bool propagate_sign=true, py::object py_ignore_mask=py::object()) {
 //   MatrixXd phi;
@@ -250,6 +258,7 @@ BOOST_PYTHON_MODULE(ctimb) {
 
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
+  py::def("apply_flow_to_weights", &py_apply_flow_to_weights);
   // py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
   // py::def("compute_flowed_precision", &py_compute_flowed_precision);
 }
