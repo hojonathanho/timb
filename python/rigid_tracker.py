@@ -94,7 +94,7 @@ def run_one_rigid_step(grid_params, tracker_params, obs_depth, obs_tsdf, obs_wei
     opt_result = optimize_sdf_transform(prev_tsdf, prev_weight, grid_params, obs_xy, tracker_params)
     if return_full:
       problem_data['opt_result'] = opt_result
-    [dx, dy, dth] = opt_result['x']
+    [dx, dy, dth] =  opt_result['x']
 
     tf_tsdf, tf_weight  = transform_last_tsdf(prev_tsdf, prev_weight, grid_params, dx,dy,dth)
     new_phi, new_weight = average_tsdfs(tf_tsdf, tf_weight, obs_tsdf, obs_weight)
