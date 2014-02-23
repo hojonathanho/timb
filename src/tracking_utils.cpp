@@ -6,8 +6,8 @@
 //#include <boost/heap/fibonacci_heap.hpp>
 
 static inline double square(double x) { return x*x; }
-
-/**void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const MatrixXi* pignore_mask, MatrixXd& out) {
+#if 0
+void march_from_zero_crossing(const MatrixXd& phi, bool propagate_sign, const MatrixXi* pignore_mask, MatrixXd& out) {
   Eigen::MatrixXi started_as_zero(Eigen::MatrixXi::Zero(phi.rows(), phi.cols()));
   Eigen::MatrixXd sign_multiplier(Eigen::MatrixXd::Ones(phi.rows(), phi.cols()));
 
@@ -117,7 +117,7 @@ static inline double square(double x) { return x*x; }
 
 #undef IN_RANGE
 }
-*/
+
 
 void make_flow_operator(const DoubleField& u_x, const DoubleField& u_y, SparseMatrixT& out) {
   const GridParams& gp = u_x.grid_params();
@@ -196,3 +196,4 @@ void compute_flowed_precision_direct(const VectorXd& precision_diag, const Doubl
 
   out_diag = (F * precision_diag.asDiagonal() * F.transpose()).eval().diagonal();
 }
+#endif

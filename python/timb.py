@@ -121,7 +121,7 @@ class TrackingOptimizationProblem(object):
     for i in range(self.params.reweighting_iters):
       state, opt_result = _optimize_once(curr_state)
 
-      flowed_prev_weights = apply_flow(self.gp, self.prev_weights, state.u_x, state.u_y)
+      flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
       self.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
 
       results.append(state)
@@ -161,7 +161,7 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_t
     problem_data['result'], problem_data['opt_result'] = result, opt_result
 
   # Flow previous weight to get new weight
-  flowed_init_weight = apply_flow(grid_params, init_weight, result.u_x, result.u_y)
+  flowed_init_weight = apply_flow_to_weights(grid_params, init_weight, result.u_x, result.u_y)
   new_weight = flowed_init_weight + obs_weight
   if return_full:
     problem_data['new_weight'] = new_weight
