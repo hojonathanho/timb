@@ -35,16 +35,22 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
 	const GridParams m_gp;   // TSDF grid parameters
 	RowVector2d m_grid_center;
 	const DoubleField m_phi; // last iterate values of TSDF
+	const DoubleField m_weight; // last iterate weights of TSDF
+	const double m_eps_weight;
+
 	MatrixX2d m_zero_points;  // points where phi should be zero : these come from camera observations
   Var m_dx, m_dy, m_dth; // optimization variables
 
 
 
   RigidObservationZeroCrossingCost(const DoubleField phi,
+                                       const DoubleField weight,
                                        const Var &dx,
                                        const Var &dy,
                                        const Var &dth)
-    : m_phi(phi), m_gp(phi.grid_params()), m_dx(dx), m_dy(dy), m_dth(dth)
+    : m_phi(phi), m_weight(weight), m_gp(phi.grid_params()),
+      m_dx(dx), m_dy(dy), m_dth(dth),
+      m_eps_weight(1e-2)
   {
     m_grid_center << (m_gp.xmax - m_gp.xmin) / 2., (m_gp.ymax - m_gp.ymin) / 2.;
   }
@@ -75,7 +81,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
     MatrixX2d tf_zero_points = transform_zero_points(x);
 
     for (int i = 0; i < tf_zero_points.rows(); ++i) {
-      if (is_in_grid(tf_zero_points.row(i))) {
+      if (is_in_grid(tf_zero_points.row(i)) and m_weight.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1)) > m_eps_weight) {
           out(i) = m_phi.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1));
       } else {
           out(i) = 0;
@@ -92,7 +98,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
     VectorXd grad_th = grad_theta(x);
 
     for (int i = 0; i < m_zero_points.rows(); ++i) {
-      if (is_in_grid(tf_zero_points.row(i))) {
+      if (is_in_grid(tf_zero_points.row(i)) and m_weight.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1)) > m_eps_weight) {
         DoubleField::ExprVec J_xy = m_phi.grad_xy(tf_zero_points(i,0), tf_zero_points(i,1));
         double f0   = m_phi.eval_xy(tf_zero_points(i,0), tf_zero_points(i,1));
         lin.set_by_expr(i, AffExpr(f0)

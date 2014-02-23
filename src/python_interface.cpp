@@ -241,7 +241,7 @@ BOOST_PYTHON_MODULE(ctimb) {
     ;
 
   py::class_<RigidObservationZeroCrossingCost, RigidObservationZeroCrossingCostPtr, py::bases<CostFunc> >("RigidObservationZeroCrossingCost",
-      py::init<const DoubleField&, const Var&, const Var&, const Var&>())
+      py::init<const DoubleField, const DoubleField, const Var&, const Var&, const Var&>())
       .def("set_zero_points", &RigidObservationZeroCrossingCost::py_set_zero_points)
     ;
   py::def("make_double_field", &py_make_double_field);
@@ -252,5 +252,4 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::def("apply_flow", &py_apply_flow);
   // py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
   // py::def("compute_flowed_precision", &py_compute_flowed_precision);
-
 }
