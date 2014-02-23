@@ -1,6 +1,7 @@
 import numpy as np
 import experiment
 import timb
+import rigid_tracker
 import time
 
 import argparse
@@ -15,8 +16,13 @@ parser.add_argument('--fake', action='store_true')
 args = parser.parse_args()
 
 def run(tracker_params):
+  rigid_mode = isinstance(tracker_params, rigid_tracker.RigidTrackerParams)
+
   if args.fake:
-    print tracker_params.flow_rigidity_coeff, tracker_params.use_linear_downweight, tracker_params.use_min_to_combine
+    if rigid_mode:
+      print tracker_params.__dict__
+    else:
+      print tracker_params.flow_rigidity_coeff
     return
 
   mod_class_list = args.experiment_class.split('.')
@@ -50,7 +56,10 @@ def run(tracker_params):
     #   plt.savefig('%s/plots_%d.png' % (args.output_dir, i), bbox_inches='tight')
 
   t_start = time.time()
-  ex_log = experiment.run_experiment(ex, tracker_params, iter_callback, args.iter_cap)
+  if rigid_mode:
+    ex_log = experiment.run_experiment_rigid(ex, tracker_params, iter_callback, args.iter_cap)
+  else:
+    ex_log = experiment.run_experiment(ex, tracker_params, iter_callback, args.iter_cap)
   t_elapsed = time.time() - t_start
 
   import os
@@ -60,6 +69,7 @@ def run(tracker_params):
   output_filename = os.path.join(args.output_dir, str(uuid.uuid4()) + '.log.pkl')
   print 'Writing to', output_filename
   out = {
+    'rigid': rigid_mode,
     'tracker_params': tracker_params,
     'grid_params': ex.get_grid_params(),
     'log': ex_log,
@@ -82,44 +92,21 @@ def main():
     tracker_params.use_linear_downweight = True
     tracker_params.use_min_to_combine = True
 
-    for a in [.01, .1, 1., 10., 1e2, 1e3, 1e4, 1e5]:
+    for a in [.1, 1.]:
       tracker_params.flow_rigidity_coeff = a
       yield deepcopy(tracker_params)
 
-#     for b in [True, False]:
-#       tracker_params.use_linear_downweight = b
-#       for c in [True, False]:
-#         tracker_params.use_min_to_combine = c
-#         yield deepcopy(tracker_params)
-      # for c in [5., 8.]:
-      #   tracker_params.smoother_phi_ignore_thresh = c
-      #   for d in [1e-2, 1e-1]:
-      #     tracker_params.smoother_weight_ignore_thresh = d
-      #     yield deepcopy(tracker_params)
+    rigid_tracker_params = rigid_tracker.RigidTrackerParams()
+    yield deepcopy(rigid_tracker_params)
 
-
-# def gen_params():
-#   from copy import deepcopy
-#   tracker_params = timb.TrackerParams()
-#   tracker_params.reweighting_iters = 10
-#   tracker_params.max_inner_iters = 10
-#   for a in [.1, 1.]:
-#     tracker_params.flow_rigidity_coeff = a
-#     for b in [True, False]:
-#       tracker_params.obs_weight_far = b
-#       for c in [True, False]:
-#         tracker_params.enable_smoothing = c
-#         for d in [True, False]:
-#           tracker_params.smoother_post_fmm = d
-#           yield deepcopy(tracker_params)
-
+  params = list(gen_params())
 
   if args.parallel is None:
-    for p in gen_params():
+    for p in params:
       run(p)
   else:
     from joblib import Parallel, delayed
-    Parallel(n_jobs=args.parallel)(delayed(run)(params) for params in gen_params())
+    Parallel(n_jobs=args.parallel)(delayed(run)(p) for p in params)
 
 if __name__ == '__main__':
   main()
