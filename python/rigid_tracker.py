@@ -49,6 +49,10 @@ def optimize_sdf_transform(phi, weight, grid_params, obs_zero_points, tracker_pa
   obs_zc_cost.set_zero_points(obs_zero_points)
   opt.add_cost(obs_zc_cost)
 
+  ## cost for norm of dx,dy,dth
+  disp_cost = DisplacementCost(dx_var, dy_var, dth_var)
+  opt.add_cost(disp_cost)
+
   opt_result = opt.optimize(np.array([init_x, init_y, init_theta]))
   return opt_result
   
@@ -103,7 +107,7 @@ def run_one_rigid_step(grid_params, tracker_params, obs_depth, obs_tsdf, obs_wei
       return new_phi, new_weight, obs_xy, problem_data
     else:
       return new_phi, new_weight
-   
+
 
 def plot_problem_data(plt, tsdf_trunc_dist, gp, state, obs_xy, obs_tsdf, obs_weight, prev_tsdf, prev_weight, new_tsdf, new_weight, out_state):
   
@@ -181,7 +185,7 @@ def test_one_step():
   tsdf0, sdf0, _, _, _ = observation_from_full_state(state0, tracker_params)
   w0 = np.zeros_like(state0)
   tsdf1, sdf1, depth1, w1, _ = observation_from_full_state(state1, tracker_params)
-  
+
   ## optimize for camera pose and find the new sdf:
   tsdf1_opt, w1_opt = run_one_rigid_step(gp, tracker_params, depth1, tsdf1, w1, tsdf0, w0, return_full=False)
 

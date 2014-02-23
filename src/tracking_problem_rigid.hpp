@@ -28,9 +28,6 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
    *   		 iterate. Upon solving, we apply the new found transformation [x,y,theta] to
    *   		 the old TSDF to get the new updated TSDF.
    *
-   *
-   *   		 ***CURRENTLY THIS COST IMPLEMENTS solving only for [x,y]***
-   *
    ***/
 	const GridParams m_gp;   // TSDF grid parameters
 	RowVector2d m_grid_center;
@@ -167,6 +164,33 @@ private:
 };
 typedef boost::shared_ptr<RigidObservationZeroCrossingCost> RigidObservationZeroCrossingCostPtr;
 
+
+
+struct DisplacementCost : public CostFunc {
+  Var m_dx, m_dy, m_dth; // optimization variables
+
+  DisplacementCost(const Var &dx, const Var &dy,const Var &dth)
+    : m_dx(dx), m_dy(dy), m_dth(dth) {
+  }
+
+  string name() const { return "dx_norm_c"; }
+  int num_residuals() const { return 3;}
+  bool is_linear() const { return true; }
+
+
+  void eval(const VectorXd& x, Eigen::Ref<VectorXd> out) {
+    out(0) = 0.1*x(0);
+    out(1) = 0.1*x(1);
+    out(2) = x(2);
+  }
+
+  void linearize(const VectorXd& x, CostFuncLinearization& lin) {
+    lin.set_by_expr(0, AffExpr(0.1*x(0)));
+    lin.set_by_expr(1, AffExpr(0.1*x(2)));
+    lin.set_by_expr(2, AffExpr(x(2)));
+  }
+};
+typedef boost::shared_ptr<DisplacementCost> DisplacementCostPtr;
 
 
 DoubleField apply_rigid_transform(const DoubleField &phi, double dx, double dy, double dth) {
