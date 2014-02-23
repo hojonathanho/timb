@@ -100,12 +100,12 @@ def run_one_rigid_step(grid_params, tracker_params, obs_depth, obs_tsdf, obs_wei
     new_phi, new_weight = average_tsdfs(tf_tsdf, tf_weight, obs_tsdf, obs_weight)
     
     if return_full:
-      return new_phi, new_weight, tf_tsdf, obs_xy, problem_data
+      return new_phi, new_weight, obs_xy, problem_data
     else:
       return new_phi, new_weight
    
 
-def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tf_phi, obs_xy, obs_tsdf, obs_weight, prev_tsdf, prev_weight, new_tsdf, new_weight, out_state):
+def plot_problem_data(plt, tsdf_trunc_dist, gp, state, obs_xy, obs_tsdf, obs_weight, prev_tsdf, prev_weight, new_tsdf, new_weight, out_state):
   
   def plot_field(f, contour=False):
     plt.imshow(f.T, aspect=1, vmin=-tsdf_trunc_dist, vmax=tsdf_trunc_dist, cmap='bwr', origin='lower')
@@ -114,7 +114,7 @@ def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tf_phi, obs_xy, obs_tsdf,
       y = np.linspace(gp.ymin, gp.ymax, gp.ny)
       X, Y = np.meshgrid(x, y, indexing='ij')
       plt.contour(X, Y, f, levels=[0])
-   
+
   plt.clf()
   import matplotlib
   matplotlib.rcParams.update({'font.size': 8, 'image.origin': 'lower'})
@@ -141,13 +141,7 @@ def plot_problem_data(plt, tsdf_trunc_dist, gp, state, tf_phi, obs_xy, obs_tsdf,
   plt.subplot(255)
   plt.imshow(prev_weight.T, cmap='binary', vmin=0, vmax=10).set_interpolation('nearest')
   plt.title('prior weight')
-  
-  plt.subplot(256)
-  plt.plot(obs_xy[:,0], obs_xy[:,1])
-  plot_field(tf_phi, contour=True)
-  plt.title('roatated tsdf')
-
-  
+    
   plt.subplot(257)
   plot_field(new_tsdf, contour=True)
   plt.title('new tsdf')
