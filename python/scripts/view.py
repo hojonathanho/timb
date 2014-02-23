@@ -58,6 +58,7 @@ if args.dump_to_mongo:
 
   doc = {
     'name': args.mongo_experiment_name,
+    'rigid': data['rigid'],
     'tracker_params': tracker_params.__dict__,
     'grid_params': gp_dict,
     'datetime': data['datetime'],
