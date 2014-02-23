@@ -110,7 +110,7 @@ def _depth_to_weights(depth, trunc_dist, filter_radius, use_linear_downweight, u
   return w
 
 
-def state_to_tsdf(state, trunc_dist=10, mode='accurate', return_all=False):
+def state_to_tsdf(state, trunc_dist, mode='accurate', return_all=False):
   '''
   '''
 
