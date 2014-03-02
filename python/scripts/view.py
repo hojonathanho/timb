@@ -1,6 +1,7 @@
 import cPickle
 from pprint import pprint
 import timb
+import rigid_tracker
 import numpy as np
 import os
 
@@ -84,16 +85,28 @@ while i < len(log):
   trusted = timb.threshold_trusted_for_view(tracker_params, entry['new_phi'], entry['new_weight'])
   output = np.where(trusted, entry['new_phi'], np.nan)
 
-  timb.plot_problem_data(
-    plt,
-    tracker_params.tsdf_trunc_dist,
-    grid_params,
-    entry['state'] if 'state' in entry else np.zeros_like(entry['obs_tsdf']),
-    entry['obs_tsdf'], entry['obs_weight'],
-    entry['curr_phi'], entry['curr_weight'],
-    entry['problem_data']['result'], entry['problem_data']['opt_result'],
-    entry['new_phi'], entry['new_weight'], output
-  )
+  if data['rigid']:
+    rigid_tracker.plot_problem_data(
+      plt,
+      tracker_params.tsdf_trunc_dist,
+      grid_params,
+      entry['state'] if 'state' in entry else np.zeros_like(entry['obs_tsdf']),
+      np.empty((0,2)),
+      entry['obs_tsdf'], entry['obs_weight'],
+      entry['curr_phi'], entry['curr_weight'],
+      entry['new_phi'], entry['new_weight'], output
+    )
+  else:
+    timb.plot_problem_data(
+      plt,
+      tracker_params.tsdf_trunc_dist,
+      grid_params,
+      entry['state'] if 'state' in entry else np.zeros_like(entry['obs_tsdf']),
+      entry['obs_tsdf'], entry['obs_weight'],
+      entry['curr_phi'], entry['curr_weight'],
+      entry['problem_data']['result'], entry['problem_data']['opt_result'],
+      entry['new_phi'], entry['new_weight'], output
+    )
 
   if args.dump_to_dir is not None:
     matplotlib.use('Agg')
