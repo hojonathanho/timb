@@ -102,6 +102,8 @@ class ImageSequence(Experiment):
     if use_prior_img:
       print 'Using prior image'
       self.prior_img = self._preprocess_img(ndimage.imread(os.path.join(input_dir, 'prior.png')))
+    else:
+      print 'Not using prior image'
 
     self.size, self.steps = 100, len(self.states)
     self.world_min = (0., 0.)
