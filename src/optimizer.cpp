@@ -8,7 +8,7 @@ using std::map;
 #include <boost/timer.hpp>
 #include <boost/format.hpp>
 
-#include <Eigen/CholmodSupport>
+//#include <Eigen/CholmodSupport>
 #include <Eigen/Eigenvalues>
 
 OptParams::OptParams() :

@@ -165,10 +165,12 @@ def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius
   w = np.where(obs_sdf < -delta, 0, w)
   w = np.where(np.isfinite(obs_sdf), w, 0) # zero precision where we get inf/no depth measurement
 
+  """
   dw = _depth_to_weights(depth, trunc_dist, filter_radius, use_linear_downweight, use_min_to_combine)
   w *= dw[:,None]
-
-  # Set weight to 1 everywhere TSDF_TRUNC away from the object
+  
+  
+  #Set weight to 1 everywhere TSDF_TRUNC away from the object
   always_trust_mask = np.zeros_like(w, dtype=bool)
   if weight_far:
     first, last = _find_first_inf(depth), _find_last_inf(depth)
@@ -178,8 +180,8 @@ def compute_obs_weight(obs_sdf, depth, trunc_dist, epsilon, delta, filter_radius
 
     w[min(last+trunc_dist, len(depth)-1):,:] = _make_edge_downweight(len(depth)-min(last+trunc_dist, len(depth)-1), filter_radius, downweight_front=True)[:,None]
     always_trust_mask[min(last+trunc_dist, len(depth)-1):,:] = True
-
-  return w, always_trust_mask
+  """
+  return w, None
 
 
 def observation_from_full_state(state, tracker_params):

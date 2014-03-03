@@ -4,15 +4,23 @@ import ctimb
 import observation
 from scipy import ndimage
 import time
-
 import argparse
+import os.path as osp
+
+TEST_DIR = '/home/ankush/sandbox444/timb/data/test_cases'
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--output_dir', default=None)
 parser.add_argument('--dump_dir', default=None)
-parser.add_argument('--input_dir', default=None)
+parser.add_argument('--test_case_name', default=None)
 parser.add_argument('--do_not_smooth', action='store_true')
 parser.add_argument('--prior_img', default=None, type=str)
 args = parser.parse_args()
+
+if args.test_case_name:
+  args.input_dir = osp.join(TEST_DIR, args.test_case_name)
+else:
+  args.input_dir = None
 
 np.set_printoptions(linewidth=1000)
 
@@ -48,7 +56,7 @@ def test_image():
   WORLD_MIN = (0., 0.)
   WORLD_MAX = (SIZE-1., SIZE-1.)
   gp = ctimb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
-  
+
   tracker_params =  rt.RigidTrackerParams()
   tracker_params.tsdf_trunc_dist = TSDF_TRUNC
 
@@ -66,7 +74,7 @@ def test_image():
 
     print problem_data['opt_result']['x']
 
-    if args.output_dir is None and obs_num%60==0:
+    if args.output_dir is None and obs_num%5==0:
       plt.show()
     else:
       pass
@@ -109,7 +117,7 @@ def test_image():
     import os
     files = [(args.input_dir + '/' + f) for f in os.listdir(args.input_dir) if os.path.isfile(args.input_dir + '/' + f) and f.endswith('.png')]
     images = [preprocess_img(ndimage.imread(f)) for f in sorted_nicely(files)]
-
+    
     for i, img in enumerate(images):
       curr_phi, curr_omega = run(i, img, curr_phi, curr_omega)
 

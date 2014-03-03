@@ -17,9 +17,9 @@ class RigidTrackerParams(object):
     self.tsdf_trunc_dist = 20.
     self.sensor_mode = 'accurate'
 
-    self.obs_weight_epsilon = 0.
+    self.obs_weight_epsilon = 0
     self.obs_weight_delta = 5.
-    self.obs_weight_filter_radius = 20
+    self.obs_weight_filter_radius = 10
     self.obs_weight_far = True
 
     self.use_linear_downweight = True
