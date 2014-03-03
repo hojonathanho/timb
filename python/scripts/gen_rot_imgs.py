@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from scipy import ndimage
-from scipy.misc import imsave
+from scipy.misc import imsave, imread
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -9,6 +9,7 @@ parser.add_argument('out_dir')
 parser.add_argument('--start_angle', default=0, type=int)
 parser.add_argument('--incr_angle', default=5, type=int)
 parser.add_argument('--num_steps', default=150, type=int)
+parser.add_argument('--orig_img', default=None, type=str)
 args = parser.parse_args()
 
 def make_square_img(size):
@@ -28,7 +29,11 @@ def main():
   assert len(os.listdir(out_dir)) == 0
 
   SIZE = 100
-  orig_img = make_square_img(SIZE)
+
+  if args.orig_img is None:
+    orig_img = make_square_img(SIZE)
+  else:
+    orig_img = imread(args.orig_img)
 
   for i in range(args.num_steps):
     angle = args.start_angle + i*args.incr_angle
