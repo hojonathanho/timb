@@ -92,12 +92,12 @@ def main():
     tracker_params.use_linear_downweight = True
     tracker_params.use_min_to_combine = True
 
-    for a in [.1, 1.]:
+    for a in [1., 10.]:
       tracker_params.flow_rigidity_coeff = a
       yield deepcopy(tracker_params)
 
-    rigid_tracker_params = rigid_tracker.RigidTrackerParams()
-    yield deepcopy(rigid_tracker_params)
+    # rigid_tracker_params = rigid_tracker.RigidTrackerParams()
+    # yield deepcopy(rigid_tracker_params)
 
   params = list(gen_params())
 
