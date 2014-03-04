@@ -249,6 +249,9 @@ def threshold_trusted(tracker_params, phi, weight, always_trust_mask=None):
   return mask
 
 def threshold_trusted_for_view(tracker_params, phi, weight):
+  return threshold_trusted_for_view2(weight)
+
+def threshold_trusted_for_view2(weight):
   return weight >= .5
 
 ########## Utility functions ##########
