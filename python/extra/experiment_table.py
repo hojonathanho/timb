@@ -17,18 +17,20 @@ db = client.timb_experiments_db
 def index():
   head = '''<tr>
     <td>id</td>
-    <td>name</td>
     <td>when</td>
+    <td>name</td>
     <td>rigid?</td>
+    <td>strain</td>
   </tr>'''
   body = ''
 
-  for e in db.experiments.find().sort('datetime'):
+  for e in db.experiments.find().sort([('datetime', -1)]):
     row = '<tr>'
     row += '<td>' + str(e['_id']) + '</td>'
-    row += '<td>' + str(e['name']) + '</td>'
     row += '<td>' + ('' if 'datetime' not in e else str(e['datetime'])) + '</td>'
+    row += '<td>' + str(e['name']) + '</td>'
     row += '<td>' + ('y' if ('rigid' in e and e['rigid']) else '') + '</td>'
+    row += '<td>' + ('' if 'flow_rigidity_coeff' not in e['tracker_params'] else str(e['tracker_params']['flow_rigidity_coeff'])) + '</td>'
     row += '</tr>'
     body += row
 
