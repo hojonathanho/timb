@@ -13,7 +13,7 @@ import gridfs
 from bson.objectid import ObjectId
 
 import argparse
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description='Extract input/output sequence and plot F1 score over time')
 parser.add_argument('id')
 parser.add_argument('--host', type=str)
 # parser.add_argument('--i', type=int, required=True)
@@ -21,11 +21,6 @@ parser.add_argument('--host', type=str)
 args = parser.parse_args()
 
 MATLAB_CWD = '/home/jonathan/Downloads/segbench/Benchmark'
-
-def sdf_to_zc(f):
-  p = np.pad(f, (1,1), 'edge')
-  return (f*p[:-2,1:-1] < 0) | (f*p[2:,1:-1] < 0) | (f*p[1:-1,:-2] < 0) | (f*p[1:-1,2:] < 0)
-
 
 def main():
   # Connect to experiment db
@@ -47,7 +42,7 @@ def main():
     out_true_bmaps[:,:,i] = entry['state']
 
     trusted = timb.threshold_trusted_for_view2(entry['new_weight'])
-    machine_output = sdf_to_zc(np.where(trusted, entry['new_phi'], np.nan))
+    machine_output = timb.sdf_to_zc(np.where(trusted, entry['new_phi'], np.nan))
     out_bmaps[:,:,i] = machine_output
 
   # out_bmaps = np.array(out_bmaps)

@@ -254,6 +254,10 @@ def threshold_trusted_for_view(tracker_params, phi, weight):
 def threshold_trusted_for_view2(weight):
   return weight >= .5
 
+def sdf_to_zc(f):
+  p = np.pad(f, (1,1), 'edge')
+  return (f*p[:-2,1:-1] < 0) | (f*p[2:,1:-1] < 0) | (f*p[1:-1,:-2] < 0) | (f*p[1:-1,2:] < 0)
+
 ########## Utility functions ##########
 
 def plot_state(state):
