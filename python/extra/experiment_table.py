@@ -21,6 +21,7 @@ def index():
     <td>name</td>
     <td>rigid?</td>
     <td>strain</td>
+    <td>norm</td>
   </tr>'''
   body = ''
 
@@ -31,6 +32,7 @@ def index():
     row += '<td>' + str(e['name']) + '</td>'
     row += '<td>' + ('y' if ('rigid' in e and e['rigid']) else '') + '</td>'
     row += '<td>' + ('' if 'flow_rigidity_coeff' not in e['tracker_params'] else str(e['tracker_params']['flow_rigidity_coeff'])) + '</td>'
+    row += '<td>' + ('' if 'flow_norm_coeff' not in e['tracker_params'] else str(e['tracker_params']['flow_norm_coeff'])) + '</td>'
     row += '</tr>'
     body += row
 
