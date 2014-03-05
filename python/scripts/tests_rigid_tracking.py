@@ -40,7 +40,15 @@ def rot(a):
   c, s = np.cos(a), np.sin(a)
   return np.array([[c, -s], [s, c]], dtype=float)
 
-
+def pad_state(state, npad):
+  """
+  state : a 2D matrix.
+  npad  : the number of additional pixels to be added on each side.
+  """
+  l,w = state.shape
+  pad_state = np.zeros(np.array([l,w]) + 2*npad, dtype=state.dtype)
+  pad_state[npad:npad+l, npad:npad+w] = state
+  return pad_state
 
 
 def test_image():
@@ -48,22 +56,31 @@ def test_image():
   if args.output_dir is not None: matplotlib.use('Agg')
   import matplotlib.pyplot as plt
 
+  NPAD = 50
   SIZE = 100
+  PSIZE = SIZE+2*NPAD
   START_ANGLE = 0
-  INCR_ANGLE  = 2
+  INCR_ANGLE  = 5
   TSDF_TRUNC  = 20
 
   WORLD_MIN = (0., 0.)
-  WORLD_MAX = (SIZE-1., SIZE-1.)
-  gp = ctimb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], SIZE, SIZE)
+  WORLD_MAX = (PSIZE-1., PSIZE-1.)
+  gp = ctimb.GridParams(WORLD_MIN[0], WORLD_MAX[0], WORLD_MIN[1], WORLD_MAX[1], PSIZE, PSIZE)
 
   tracker_params =  rt.RigidTrackerParams()
   tracker_params.tsdf_trunc_dist = TSDF_TRUNC
 
   def run(obs_num, img, init_phi, init_weight):
-    state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
-    
-    tsdf, sdf, depth, w, _ = observation.observation_from_full_state(state, tracker_params)
+    state = ((img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)).astype('float64')
+    state = pad_state(state, NPAD)
+    print state.shape
+#     plt.subplot(211)
+#     plt.imshow(state)
+#     plt.subplot(212)
+#     plt.imshow(pstate)
+#     plt.show()
+
+    tsdf, sdf, depth, w = observation.observation_from_full_state_rigid(state, tracker_params)
   
     ## optimize for camera pose and find the new sdf:
     new_phi, new_weight, obs_xy, problem_data = rt.run_one_rigid_step(gp, tracker_params, depth, tsdf, w, init_phi, init_weight, return_full=True)
@@ -74,7 +91,7 @@ def test_image():
 
     print problem_data['opt_result']['x']
 
-    if args.output_dir is None and obs_num%5==0:
+    if args.output_dir is None :
       plt.show()
     else:
       pass
@@ -89,8 +106,8 @@ def test_image():
 
     return new_phi, new_weight
 
-  orig_phi   = np.empty((SIZE, SIZE)); orig_phi.fill(tracker_params.tsdf_trunc_dist)
-  orig_omega = np.zeros((SIZE, SIZE));
+  orig_phi   = np.empty((PSIZE, PSIZE)); orig_phi.fill(tracker_params.tsdf_trunc_dist)
+  orig_omega = np.zeros((PSIZE, PSIZE));
 
   def preprocess_img(img):
     return np.transpose(img, (1, 0, 2))

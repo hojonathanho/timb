@@ -49,7 +49,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
       m_dx(dx), m_dy(dy), m_dth(dth),
       m_eps_weight(1e-2)
   {
-    m_grid_center << (m_gp.xmax - m_gp.xmin) / 2., (m_gp.ymax - m_gp.ymin) / 2.;
+    m_grid_center << (m_gp.xmax - m_gp.xmin+1) / 2., (m_gp.ymax - m_gp.ymin+1) / 2.;
   }
 
   string name() const { return "rigid_obs_zc"; }
@@ -165,12 +165,11 @@ private:
 typedef boost::shared_ptr<RigidObservationZeroCrossingCost> RigidObservationZeroCrossingCostPtr;
 
 
-
 struct DisplacementCost : public CostFunc {
   Var m_dx, m_dy, m_dth; // optimization variables
   const double w_x, w_y, w_th;
   DisplacementCost(const Var &dx, const Var &dy,const Var &dth)
-    : m_dx(dx), m_dy(dy), m_dth(dth), w_x(1.), w_y(1.), w_th(1.) {
+    : m_dx(dx), m_dy(dy), m_dth(dth), w_x(0.9), w_y(0.9), w_th(0.1) {
   }
 
   string name() const { return "dx_norm_c"; }
@@ -185,9 +184,9 @@ struct DisplacementCost : public CostFunc {
   }
 
   void linearize(const VectorXd& x, CostFuncLinearization& lin) {
-    lin.set_by_expr(0, AffExpr(w_x*x(0)));
-    lin.set_by_expr(1, AffExpr(w_y*x(1)));
-    lin.set_by_expr(2, AffExpr(w_th*x(2)));
+    lin.set_by_expr(0, w_x*m_dx);
+    lin.set_by_expr(1, w_y*m_dy);
+    lin.set_by_expr(2, w_th*m_dth);
   }
 };
 typedef boost::shared_ptr<DisplacementCost> DisplacementCostPtr;

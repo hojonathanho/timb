@@ -102,7 +102,7 @@ def run_one_rigid_step(grid_params, tracker_params, obs_depth, obs_tsdf, obs_wei
 
     tf_tsdf, tf_weight  = transform_last_tsdf(prev_tsdf, prev_weight, grid_params, dx,dy,dth)
     new_phi, new_weight = average_tsdfs(tf_tsdf, tf_weight, obs_tsdf, obs_weight)
-    
+
     if return_full:
       return new_phi, new_weight, obs_xy, problem_data
     else:
@@ -131,7 +131,7 @@ def plot_problem_data(plt, tsdf_trunc_dist, gp, state, obs_xy, obs_tsdf, obs_wei
   plot_field(obs_tsdf, contour=True)
   #plt.imshow(obs_tsdf, cmap='bwr', vmin=-tsdf_trunc_dist, vmax=tsdf_trunc_dist).set_interpolation('nearest')
   #plt.contour(obs_tsdf, levels=[0])
-  plt.plot(obs_xy[:,0], obs_xy[:,1])
+  plt.plot(obs_xy[:,0], obs_xy[:,1], 'k', linewidth=3)
   plt.title('observation tsdf')
 
   plt.subplot(253)
