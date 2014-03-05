@@ -49,7 +49,7 @@ struct RigidObservationZeroCrossingCost : public CostFunc {
       m_dx(dx), m_dy(dy), m_dth(dth),
       m_eps_weight(1e-2)
   {
-    m_grid_center << (m_gp.xmax - m_gp.xmin+1) / 2., (m_gp.ymax - m_gp.ymin+1) / 2.;
+    m_grid_center << (m_gp.xmax + m_gp.xmin) / 2., (m_gp.ymax + m_gp.ymin) / 2.;
   }
 
   string name() const { return "rigid_obs_zc"; }
@@ -134,8 +134,8 @@ private:
     /**Rotate the obseration points by THETA and store in OUT_PTS.
      * Center of rotation is at the center of the grid.*/
     Matrix2d rot;
-    rot << cos(theta), sin(theta),
-          -sin(theta), cos(theta);
+    rot << cos(theta), -sin(theta),
+           sin(theta), cos(theta);
 
     out_pts = m_zero_points;
     out_pts.rowwise() -= m_grid_center;
@@ -169,7 +169,7 @@ struct DisplacementCost : public CostFunc {
   Var m_dx, m_dy, m_dth; // optimization variables
   const double w_x, w_y, w_th;
   DisplacementCost(const Var &dx, const Var &dy,const Var &dth)
-    : m_dx(dx), m_dy(dy), m_dth(dth), w_x(0.9), w_y(0.9), w_th(0.1) {
+    : m_dx(dx), m_dy(dy), m_dth(dth), w_x(1), w_y(1), w_th(1) {
   }
 
   string name() const { return "dx_norm_c"; }
@@ -195,15 +195,21 @@ typedef boost::shared_ptr<DisplacementCost> DisplacementCostPtr;
 DoubleField apply_rigid_transform(const DoubleField &phi, double dx, double dy, double dth) {
   /** returns a new sdf after applying a rigid transform [dX,dY, dTH] on the old sdf PHI. */
   Matrix2d rot;
-  rot << cos(dth), sin(dth),
-        -sin(dth), cos(dth);
+  rot << cos(dth), -sin(dth),
+         sin(dth), cos(dth);
+
+  RowVector2d grid_center;
+
+  grid_center << (phi.grid_params().xmax + phi.grid_params().xmin) / 2., (phi.grid_params().ymax + phi.grid_params().ymin) / 2.;
 
   DoubleField new_phi(phi.grid_params());
   for (int i=0; i < phi.grid_params().nx; i++)
     for (int j=0; j < phi.grid_params().ny; j++) {
       std::pair<double, double> xy = phi.grid_params().to_xy(i,j);
       Vector2d vec_xy; vec_xy << xy.first, xy.second;
+      vec_xy -= grid_center;
       vec_xy = rot*vec_xy;
+      vec_xy += grid_center;
       vec_xy += Vector2d(dx,dy);
       new_phi(i,j) = phi.eval_xy(vec_xy.x(), vec_xy.y());
     }

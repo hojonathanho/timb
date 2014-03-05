@@ -91,7 +91,7 @@ def test_image():
 
     print problem_data['opt_result']['x']
 
-    if args.output_dir is None :
+    if args.output_dir is None and obs_num%10==0:
       plt.show()
     else:
       pass
