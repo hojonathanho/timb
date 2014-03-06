@@ -1,7 +1,7 @@
 import numpy as np
 import rigid_tracker as rt
 import ctimb
-import observation
+import observation_rigid as robs
 from scipy import ndimage
 import time
 import argparse
@@ -80,7 +80,7 @@ def test_image():
 #     plt.imshow(pstate)
 #     plt.show()
 
-    tsdf, sdf, depth, w = observation.observation_from_full_state_rigid(state, tracker_params)
+    tsdf, sdf, depth, w = robs.observation_from_full_state_rigid(state, tracker_params)
   
     ## optimize for camera pose and find the new sdf:
     new_phi, new_weight, obs_xy, problem_data = rt.run_one_rigid_step(gp, tracker_params, depth, tsdf, w, init_phi, init_weight, return_full=True)

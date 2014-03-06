@@ -1,7 +1,7 @@
 import ctimb
 from ctimb import *
 import numpy as np
-from observation import * 
+from observation_rigid import * 
 
 np.set_printoptions(linewidth=1000)
 
