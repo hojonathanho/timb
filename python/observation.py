@@ -205,32 +205,6 @@ def observation_from_full_state(state, tracker_params):
   return tsdf, sdf, depth, weight, always_trust_mask
 
 
-def compute_obs_weight_rigid(obs_sdf, depth, epsilon, delta):
-  # linear weight (b) in Bylow et al 2013
-  # epsilon, delta = 5, 10
-  # epsilon, delta = 0, 5
-  assert delta > epsilon
-  w = np.where(obs_sdf >= -epsilon, OBS_PEAK_WEIGHT, obs_sdf)
-  w = np.where((obs_sdf <= -epsilon) & (obs_sdf >= -delta), (OBS_PEAK_WEIGHT/(delta-epsilon))*(obs_sdf + delta), w)
-  w = np.where(obs_sdf < -delta, 0, w)
-  w = np.where(np.isfinite(obs_sdf), w, 0) # zero precision where we get inf/no depth measurement
-  return w
-
-def observation_from_full_state_rigid(state, tracker_params):
-  tsdf, sdf, depth = state_to_tsdf(
-    state,
-    trunc_dist=tracker_params.tsdf_trunc_dist,
-    mode=tracker_params.sensor_mode,
-    return_all=True
-  )
-
-  weight = compute_obs_weight_rigid( sdf, depth,
-                                     epsilon=tracker_params.obs_weight_epsilon,
-                                     delta=tracker_params.obs_weight_delta  )
-  return tsdf, sdf, depth, weight
-
-
-
 def observation_from_full_img(img, tracker_params):
   state = (img[:,:,0] != 255) | (img[:,:,1] != 255) | (img[:,:,2] != 255)
   return observation_from_full_state(state, tracker_params)
