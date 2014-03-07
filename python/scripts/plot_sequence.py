@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(description='Plot sequence')
 parser.add_argument('id')
 parser.add_argument('--host', type=str)
 parser.add_argument('--num_steps', type=int)
+parser.add_argument('--baseline_ids', type=str)
 # parser.add_argument('--output', type=str, required=True)
 args = parser.parse_args()
 
@@ -70,56 +71,62 @@ def main():
   fs = gridfs.GridFS(db)
 
   # Pull out parts of the sequence
-  o = db.experiments.find_one({'_id': ObjectId(args.id)})
-
-  step_inds = np.floor(np.linspace(1, len(o['log'])-2, args.num_steps)).astype(int)
-  entries = [cPickle.loads(fs.get(o['log'][i]['entry_file']).read()) for i in step_inds]
+  ids = args.id.split(',')
+  baseline_ids = args.baseline_ids.split(',')
 
   import matplotlib
   matplotlib.rcParams.update({'font.size': 8, 'image.origin': 'lower'})
   import matplotlib.pyplot as plt
 
-  # def plot_binary(img):
-  #   img = skimage.morphology.skeletonize(img)
-  #   plt.imshow(img.T, aspect=1, origin='lower', cmap='binary_r', interpolation='spline36')
-
-  def plot_field(f, img=True, contour=False):
-    assert img or contour
-    if img:
-      plt.imshow(f.T, aspect=1, vmin=-1, vmax=1, cmap='bwr', origin='lower')
-    else:
-      plt.imshow(np.zeros_like(f), aspect=1, vmin=-1, vmax=1, cmap='bwr', origin='lower')
-    if contour:
-      x = np.linspace(0, f.shape[0]-1, f.shape[0])
-      y = np.linspace(0, f.shape[1]-1, f.shape[1])
-      X, Y = np.meshgrid(x, y, indexing='ij')
-      plt.contour(X, Y, f, levels=[0], colors='k')
-
-  ROWS = 2
-  plt.figure(figsize=(args.num_steps, ROWS), dpi=100)
+  ROWS = 3
+  plt.figure(figsize=(args.num_steps, ROWS*len(ids)), dpi=100)
   plt.subplots_adjust(wspace=.001, hspace=.001)
-  for i, e in enumerate(entries):
-    plt.subplot(ROWS, len(entries), i+1 + len(entries)*0)
-    plt.axis('off')
-    img = np.empty(e['state'].shape+(3,), dtype=np.uint8)
-    for k in range(3):
-      img[:,:,k] = np.where(e['state'], 0, 255)
-    plot_field(get_sdf(img), False, True)
 
-    # plt.subplot(ROWS, len(entries), i+1 + len(entries)*1)
-    # plt.axis('off')
-    # plot_field(e['new_phi'])
+  for id_ind, id in enumerate(ids):
+    o = db.experiments.find_one({'_id': ObjectId(id)})
+    id_baseline = baseline_ids[id_ind]
+    o_baseline = db.experiments.find_one({'_id': ObjectId(id_baseline)})
 
-    # plt.subplot(ROWS, len(entries), i+1 + len(entries)*2)
-    # plt.axis('off')
-    # plt.imshow(e['new_weight'].T, cmap='binary_r', vmin=0, vmax=observation.OBS_PEAK_WEIGHT*10)
+    step_inds = np.floor(np.linspace(1, len(o['log'])-2, args.num_steps)).astype(int)
+    entries = [cPickle.loads(fs.get(o['log'][i]['entry_file']).read()) for i in step_inds]
+    entries_baseline = [cPickle.loads(fs.get(o_baseline['log'][i]['entry_file']).read()) for i in step_inds]
 
-    plt.subplot(ROWS, len(entries), i+1 + len(entries)*1)
-    plt.axis('off')
-    trusted = timb.threshold_trusted_for_view2(e['new_weight'])
-    machine_output = np.where(trusted, e['new_phi'], np.nan)
-    # machine_output = timb.sdf_to_zc(np.where(trusted, e['new_phi'], np.nan))
-    plot_field(machine_output, False, True)
+    # def plot_binary(img):
+    #   img = skimage.morphology.skeletonize(img)
+    #   plt.imshow(img.T, aspect=1, origin='lower', cmap='binary_r', interpolation='spline36')
+
+    def plot_field(f, img=True, contour=False, colors='k'):
+      assert img or contour
+      if img:
+        plt.imshow(f.T, aspect=1, vmin=-1, vmax=1, cmap='bwr', origin='lower')
+      else:
+        plt.imshow(np.zeros_like(f), aspect=1, vmin=-1, vmax=1, cmap='bwr', origin='lower')
+      if contour:
+        x = np.linspace(0, f.shape[0]-1, f.shape[0])
+        y = np.linspace(0, f.shape[1]-1, f.shape[1])
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        plt.contour(X, Y, f, levels=[0], colors=colors)
+
+    for i, e in enumerate(entries):
+      plt.subplot(ROWS*len(ids), len(entries), i+1 + len(entries)*(0 + ROWS*id_ind))
+      plt.axis('off')
+      img = np.empty(e['state'].shape+(3,), dtype=np.uint8)
+      for k in range(3):
+        img[:,:,k] = np.where(e['state'], 0, 255)
+      plot_field(get_sdf(img), False, True)
+
+      e_baseline = entries_baseline[i]
+      plt.subplot(ROWS*len(ids), len(entries), i+1 + len(entries)*(1 + ROWS*id_ind))
+      plt.axis('off')
+      trusted = timb.threshold_trusted_for_view2(e_baseline['new_weight'])
+      baseline_output = np.where(trusted, e_baseline['new_phi'], np.nan)
+      plot_field(baseline_output, False, True, colors='r')
+
+      plt.subplot(ROWS*len(ids), len(entries), i+1 + len(entries)*(2 + ROWS*id_ind))
+      plt.axis('off')
+      trusted = timb.threshold_trusted_for_view2(e['new_weight'])
+      machine_output = np.where(trusted, e['new_phi'], np.nan)
+      plot_field(machine_output, False, True, colors='b')
 
   plt.savefig('out.pdf', bbox_inches='tight')
   plt.show()
