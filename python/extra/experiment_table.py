@@ -19,6 +19,7 @@ def index():
     <td>id</td>
     <td>when</td>
     <td>name</td>
+    <td>time</td>
     <td>rigid?</td>
     <td>disp_cost?</td>
     <td>strain</td>
@@ -31,6 +32,7 @@ def index():
     row += '<td>' + str(e['_id']) + '</td>'
     row += '<td>' + ('' if 'datetime' not in e else str(e['datetime'])) + '</td>'
     row += '<td>' + str(e['name']) + '</td>'
+    row += '<td>' + ('' if 'time_elapsed' not in e else str(e['time_elapsed'])) + '</td>'
     row += '<td>' + ('y' if ('rigid' in e and e['rigid']) else '') + '</td>'
     row += '<td>' + (('y' if 'disp_cost' in e['tracker_params'] and e['tracker_params']['disp_cost'] else '') if ('rigid' in e and e['rigid']) else '') + '</td>'
     row += '<td>' + ('' if 'flow_rigidity_coeff' not in e['tracker_params'] else str(e['tracker_params']['flow_rigidity_coeff'])) + '</td>'
