@@ -40,15 +40,6 @@ def rot(a):
   c, s = np.cos(a), np.sin(a)
   return np.array([[c, -s], [s, c]], dtype=float)
 
-def pad_state(state, npad):
-  """
-  state : a 2D matrix.
-  npad  : the number of additional pixels to be added on each side.
-  """
-  l,w = state.shape
-  pad_state = np.zeros(np.array([l,w]) + 2*npad, dtype=state.dtype)
-  pad_state[npad:npad+l, npad:npad+w] = state
-  return pad_state
 
 
 def test_image():

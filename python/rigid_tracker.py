@@ -25,6 +25,20 @@ class RigidTrackerParams(object):
     self.use_linear_downweight = True
     self.use_min_to_combine = True
 
+    self.disp_cost = False
+
+def pad_state(state, npad):
+  """
+  state : a 2D matrix.
+  npad  : the number of additional pixels to be added on each side.
+  """
+  l,w = state.shape
+  pad_state = np.zeros(np.array([l,w]) + 2*npad, dtype=state.dtype)
+  pad_state[npad:npad+l, npad:npad+w] = state
+  return pad_state
+
+def unpad_state(state, npad, orig_l, orig_w):
+  return state[npad:npad+orig_l, npad:npad+orig_w]
 
 def optimize_sdf_transform(phi, weight, grid_params, obs_zero_points, tracker_params, init_x=0, init_y=0, init_theta=0.0):
   """
@@ -50,8 +64,9 @@ def optimize_sdf_transform(phi, weight, grid_params, obs_zero_points, tracker_pa
   opt.add_cost(obs_zc_cost)
 
   ## cost for norm of dx,dy,dth
-  disp_cost = DisplacementCost(dx_var, dy_var, dth_var)
-  opt.add_cost(disp_cost)
+  if tracker_params.disp_cost:
+    disp_cost = DisplacementCost(dx_var, dy_var, dth_var)
+    opt.add_cost(disp_cost)
 
   opt_result = opt.optimize(np.array([init_x, init_y, init_theta]))
   return opt_result
