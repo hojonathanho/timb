@@ -33,6 +33,8 @@ def main():
 
   # Pull out input/output sequence
   o = db.experiments.find_one({'_id': ObjectId(args.id)})
+  from pprint import pprint
+  pprint(o['tracker_params'])
 
   out_bmaps = np.empty((100, 100, len(o['log'])), dtype=np.uint32)
   out_true_bmaps = np.empty((100, 100, len(o['log'])), dtype=np.uint32)
@@ -67,11 +69,14 @@ def main():
 
   print out_f1s
 
+  print 'average f1', np.mean(out_f1s[np.isfinite(out_f1s)])
+
   import matplotlib.pyplot as plt
   plt.plot(out_ps, label="precision")
   plt.plot(out_rs, label="recall")
   plt.plot(out_f1s, label="f1")
-  plt.legend()
+  plt.legend(loc=4)
+  plt.ylim([0, 1])
   plt.show()
 
 if __name__ == '__main__':
