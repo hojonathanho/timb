@@ -2,6 +2,8 @@ import numpy as np
 import random
 import sympy
 import scipy.weave
+import re
+from collections import defaultdict
 
 def random_str(length):
   import string
@@ -49,30 +51,41 @@ def make_var_symbols(name, order):
   a = np.empty((size,size), dtype=object)
   for i in range(size):
     for j in range(size):
-      a[i,j] = sympy.Symbol('%s(%s,%s)' % (name, n_to_offset('i', i-order), n_to_offset('j', j-order)))
+      a[i,j] = sympy.Symbol('%s_{%s,%s}' % (name, n_to_offset('i', i-order), n_to_offset('j', j-order)))
   return a
 
 
 class FieldVars(object):
-  def __init__(self, name, hx, hy, order=2, latex_name=None):
+  def __init__(self, name, hx, hy, order=2, constant=False, latex_name=None):
     self.name = name
-    self.order = order
-    self.internal_name = random_str(10)
+    self.order = 0 if constant else order
+    self.internal_name = name.replace('_','') + random_str(10)
     self.latex_name = name if latex_name is None else latex_name # todo
-    self.u = make_var_symbols(self.internal_name, order)
+    if constant:
+      self.u = np.empty((1,1), dtype=object)
+      self.u[0,0] = sympy.Symbol(self.internal_name)
+    else:
+      self.u = make_var_symbols(self.internal_name, order)
     self.hx, self.hy = hx, hy
 
-    self.mode_x, self.mode_y = None, None
+    self.mode_x, self.mode_y = 'c', 'c'
 
   def __getitem__(self, idx):
     assert len(idx) == 2
     return self.u[idx[0]+self.order, idx[1]+self.order]
+
+  def __call__(self):
+    return self[0,0]
 
   def set_x_mode(self, mode_x):
     self.mode_x = mode_x
 
   def set_y_mode(self, mode_y):
     self.mode_y = mode_y
+
+  def set_mode(self, mode_x, mode_y):
+    self.mode_x, self.mode_y = mode_x, mode_y
+
 
   def dx(self):
     return finite_diff(self[-1,0], self[0,0], self[1,0], self.hx, self.mode_x)
@@ -94,52 +107,17 @@ class FieldVars(object):
       self.hx, self.mode_x
     )
 
-  # def replace_var_names(self, s, style='c'):
-  #   if style == 'c':
-  #     return s.replace(self.internal_name, self.name)
-  #   elif style == 'latex':
-  #     return s.replace(self.internal_name, self.latex_name)
-  #   else:
-  #     raise NotImplementedError
+  def replace_var_names(self, s, style='c'):
+    if style == 'c':
+      s = s.replace(self.internal_name, self.name)
+      s = s.replace('_{', '(')
+      s = s.replace('}', ')')
+      return s
+    elif style == 'latex':
+      return s.replace(self.internal_name, self.latex_name)
+    else:
+      raise NotImplementedError
 
-
-# def solve_by_factorization(eval_expr_func, var_grids, grid_size):
-#   assert len(var_grid) == 1 # heh
-#   # Make variable symbols for every point in the grid
-#   syms = {}
-#   for vg in var_grids:
-#     s = np.zeros((grid_size, grid_size), dtype=object)
-#     for i in range(grid_size):
-#       for j in range(grid_size):
-#         s[i,j] = sympy.Symbol('%s_{%d,%d}' % (vg.name, i, j))
-#     syms[vg] = s
-
-#   # Form the equations for each grid point
-#   equations = {}
-#   for vg in var_grids:
-#     eqns = np.zeros((grid_size, grid_size), dtype=object)
-#     for i in range(grid_size):
-#       for j in range(grid_size):
-#         # Set finite difference mode in x direction
-#         if i == 0:
-#           for vg in var_grids: vg.set_x_mode('f')
-#         elif i == grid_size-1:
-#           for vg in var_grids: vg.set_x_mode('b')
-#         else:
-#           vg.set_x_mode('c')
-
-#         # Set finite difference mode in y direction
-#         if j == 0:
-#           for vg in var_grids: vg.set_y_mode('f')
-#         elif j == grid_size-1:
-#           for vg in var_grids: vg.set_y_mode('b')
-#         else:
-#           vg.set_y_mode('c')
-
-#         e = eval_expr_func()
-#         eqns[i,j] = e
-
-#     equations[vg] = eqns
 
 def make_grid_iter_code(expr_dict, var_name_1, var_ptr_name_1, var_name_2, var_ptr_name_2, num_iters_name, grid_size_name):
   return r'''
@@ -164,11 +142,11 @@ def make_grid_iter_code(expr_dict, var_name_1, var_ptr_name_1, var_name_2, var_p
             (*{var_ptr_name_2})(i,j) = {exprs[fc]};
           }}
 
-        }} else if (i == grid_size-1) {{
+        }} else if (i == {grid_size}-1) {{
 
           if (j == 0) {{
             (*{var_ptr_name_2})(i,j) = {exprs[bf]};
-          }} else if (j == grid_size-1) {{
+          }} else if (j == {grid_size}-1) {{
             (*{var_ptr_name_2})(i,j) = {exprs[bb]};
           }} else {{
             (*{var_ptr_name_2})(i,j) = {exprs[bc]};
@@ -178,7 +156,7 @@ def make_grid_iter_code(expr_dict, var_name_1, var_ptr_name_1, var_name_2, var_p
 
           if (j == 0) {{
             (*{var_ptr_name_2})(i,j) = {exprs[cf]};
-          }} else if (j == grid_size-1) {{
+          }} else if (j == {grid_size}-1) {{
             (*{var_ptr_name_2})(i,j) = {exprs[cb]};
           }} else {{
             (*{var_ptr_name_2})(i,j) = {exprs[cc]};
@@ -303,98 +281,306 @@ def jacobi_laplace_equation(u_input):
   out = u1 if last_is_u1 else u2
   return out
 
-  # print u_input
-  # print out
+
+
+
+
+def jacobi_laplace_equation(u_input):
+  code = r'''
+
+  blitz::Array<double,2> *p_u1 = &u1, *p_u2 = &u2;
+
+  for (int iter = 0; iter < num_iters; ++iter) {
+    if (iter != 0) {
+      std::swap(p_u1, p_u2);
+    }
+for (int i = 0; i < grid_size; ++i) {
+  for (int j = 0; j < grid_size; ++j) {
+    if (i == 0) {
+
+      if (j == 0) {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 2*alpha*v(i+1,j+1) - 2*alpha*v(i+1,j) - 2*alpha*v(i,j+1) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = (2*alpha*u(i+1,j+1) - 2*alpha*u(i+1,j) - 2*alpha*u(i,j+1) + 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      } else if (j == grid_size-1) {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = (-2*alpha*u(i+1,j-1) + 2*alpha*u(i+1,j) + 2*alpha*u(i,j-1) - 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      } else {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + alpha*v(i+1,j+1) - alpha*v(i+1,j-1) - alpha*v(i,j+1) + alpha*v(i,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)));
+
+        v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j-1) - alpha*u(i,j+1) + alpha*u(i,j-1) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      }
+
+    } else if (i == grid_size-1) {
+
+      if (j == 0) {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (-4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + 2*alpha*v(i,j+1) - 2*alpha*v(i,j) - 2*alpha*v(i-1,j+1) + 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = (2*alpha*u(i,j+1) - 2*alpha*u(i,j) - 2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      } else if (j == grid_size-1) {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (-4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) - 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + 2*alpha*v(i-1,j-1) - 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = (-2*alpha*u(i,j-1) + 2*alpha*u(i,j) + 2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      } else {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + alpha*v(i,j+1) - alpha*v(i,j-1) - alpha*v(i-1,j+1) + alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)));
+
+        v(i,j) = (alpha*u(i,j+1) - alpha*u(i,j-1) - alpha*u(i-1,j+1) + alpha*u(i-1,j-1) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      }
+
+    } else {
+
+      if (j == 0) {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 4*alpha*u(i-1,j) + alpha*v(i+1,j+1) - alpha*v(i+1,j) - alpha*v(i-1,j+1) + alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j) - alpha*u(i-1,j+1) + alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)));
+
+      } else if (j == grid_size-1) {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) + 4*alpha*u(i-1,j) - alpha*v(i+1,j-1) + alpha*v(i+1,j) + alpha*v(i-1,j-1) - alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = (-alpha*u(i+1,j-1) + alpha*u(i+1,j) + alpha*u(i-1,j-1) - alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)));
+
+      } else {
+
+        phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+        u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + 4*alpha*u(i-1,j) + (1.0L/2.0L)*alpha*v(i+1,j+1) - 1.0L/2.0L*alpha*v(i+1,j-1) - 1.0L/2.0L*alpha*v(i-1,j+1) + (1.0L/2.0L)*alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+        v(i,j) = ((1.0L/2.0L)*alpha*u(i+1,j+1) - 1.0L/2.0L*alpha*u(i+1,j-1) - 1.0L/2.0L*alpha*u(i-1,j+1) + (1.0L/2.0L)*alpha*u(i-1,j-1) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+      }
+
+    }
+  }
+}
+
+    printf("iter %d done %d\n", iter, p_u2 == &u1);
+  }
+
+  return_val = p_u2 == &u1;
+  '''
+
+  u1 = u_input.astype(float).copy()
+  u2 = u1.copy()
+
+  num_iters = 1000
+
+  assert u_input.shape[0] == u_input.shape[1]
+  grid_size = u_input.shape[0]
+
+  last_is_u1 = scipy.weave.inline(code, ['u1', 'u2', 'num_iters', 'grid_size'], type_converters=scipy.weave.converters.blitz)
+  out = u1 if last_is_u1 else u2
+  return out
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def main():
   np.random.seed(0)
 
-  h = sympy.Symbol('h')
-  u = FieldVars('u', h, h)
-  v = FieldVars('v', h, h)
-  # print u.finite_diff_x()
-  # print u.finite_diff_x(0)
-  # print u.finite_diff_x(2)
-  # print
-  # print u.finite_diff_y()
-  # print u.finite_diff_y(0)
-  # print u.finite_diff_y(2)
-  #
-  # print u.finite_diff_y()
 
-  # print sympy.simplify(u.dx())
-  # print sympy.simplify(u.dy('c'))
-  # print sympy.simplify(u.dy2('f'))
-  # print sympy.simplify(u.dxdy())
+# u.set_x_mode('c'); u.set_y_mode('c')
+# v.set_x_mode('c'); v.set_y_mode('c')
+# def fn():
+#   return sympy.simplify(sympy.solve(u.dx2() + u.dy2(), u[0,0]))[0]
 
-  u.set_x_mode('c'); u.set_y_mode('c')
-  v.set_x_mode('c'); v.set_y_mode('c')
-  # e = sympy.simplify(u.dx2() + u.dy2())
-  # print sympy.printing.ccode(e)
-  # # from sympy.utilities.codegen import codegen
-  # # print codegen(('f', e), 'C', 'test', header=False, empty=False)[0][1]
-  # print sympy.latex(sympy.solve(u.dx2() + u.dy2() - sympy.Symbol('f'), u[0,0]))
-  # print sympy.latex(sympy.Symbol(r'\tilde{w}')**2)
+# Jacobi(fn, u)
+# # return
 
-  # e = sympy.simplify(sympy.solve(u.dx2() + u.dy2(), u[0,0]))
-  # print e
+# u_in = np.random.rand(100,100)
+# u_out_0 = jacobi_laplace_equation(u_in)
+# u_out = Jacobi(fn, u).run(u_in, 1000)
+# print 'ok?', np.allclose(u_out_0, u_out)
+# import matplotlib.pyplot as plt
+# plt.figure(1)
+# plt.imshow(u_in, cmap='gray')
+# plt.figure(2)
+# plt.imshow(u_out, cmap='gray')
+# plt.show()
 
-  def fn():
-    return sympy.simplify(sympy.solve(u.dx2() + u.dy2(), u[0,0]))[0]
-
-  Jacobi(fn, u)
-  # return
-
-  u_in = np.random.rand(100,100)
-  u_out_0 = jacobi_laplace_equation(u_in)
-  u_out = Jacobi(fn, u).run(u_in, 1000)
-  print 'ok?', np.allclose(u_out_0, u_out)
-  import matplotlib.pyplot as plt
-  plt.figure(1)
-  plt.imshow(u_in, cmap='gray')
-  plt.figure(2)
-  plt.imshow(u_out, cmap='gray')
-  plt.show()
-
-  return
   ############################
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
   ##################
 
+  all_vars = []
+  def add_vars(*args, **kwargs):
+    fv = FieldVars(*args, **kwargs)
+    all_vars.append(fv)
+    return fv
 
-  wtilde = sympy.Symbol(r'\tilde{w}_{i,j}')
-  mu0 = sympy.Symbol(r'\tilde{\mu}^0_{i,j}')
-  muu = sympy.Symbol(r'\tilde{\mu}^u_{i,j}')
-  muv = sympy.Symbol(r'\tilde{\mu}^v_{i,j}')
-  phi = sympy.Symbol(r'\phi_{i,j}')
-  alpha = sympy.Symbol(r'\alpha') # const
-  beta = sympy.Symbol(r'\beta') # const
-  gamma = sympy.Symbol(r'\gamma') # const
-  phi0 = sympy.Symbol(r'\phi^0_{i,j}')
-  u0 = sympy.Symbol(r'u^0_{i,j}')
-  v0 = sympy.Symbol(r'v^0_{i,j}')
+  # grid spacing
+  h = sympy.Symbol('h')
 
-  u.set_mode('c', 'c')
-  v.set_mode('c', 'c')
-  expr = -2*wtilde*muu*(phi - mu0 - muu*u[0,0] - muv*v[0,0]) + 2*beta*u[0,0] + 2*gamma*(u[0,0] - u0) - alpha*(8*u.dx2() + 4*(v.dxdy() + u.dy2()))
-  print sympy.latex(sympy.simplify(sympy.solve(expr, u[0,0])), fold_short_frac=True)
-  print
-  expr = -2*wtilde*muv*(phi - mu0 - muu*u[0,0] - muv*v[0,0]) + 2*beta*v[0,0] + 2*gamma*(v[0,0] - v0) - alpha*(8*v.dy2() + 4*(u.dxdy() + v.dx2()))
-  print sympy.latex(sympy.simplify(sympy.solve(expr, v[0,0])), fold_short_frac=True)
+  # variables to solve for
+  u = add_vars('u', h, h, latex_name='u')
+  v = add_vars('v', h, h, latex_name='v')
+  phi = add_vars('phi', h, h, latex_name=r'\phi')
+
+  # observation weights and values
+  z = add_vars('z', h, h, latex_name=r'z')
+  wz = add_vars('w_z', h, h, latex_name=r'w^z')
+
+  # flowed weights and phi values
+  mu0 = add_vars('mu_0', h, h, latex_name=r'\tilde{\mu}^0')
+  muu = add_vars('mu_u', h, h, latex_name=r'\tilde{\mu}^u')
+  muv = add_vars('mu_v', h, h, latex_name=r'\tilde{\mu}^v')
+  wtilde = add_vars('wtilde', h, h, latex_name=r'\tilde{w}')
+
+  # cost coefficients (alpha: strain, beta: norm)
+  alpha = add_vars('alpha', h, h, latex_name=r'\alpha', constant=True)
+  beta = add_vars('beta', h, h, latex_name=r'\beta', constant=True)
+
+  # trust region coefficient
+  gamma = add_vars('gamma', h, h, latex_name=r'\gamma', constant=True)
+  # trust region center
+  phi0 = add_vars('phi_0', h, h, latex_name=r'\phi^0')
+  u0 = add_vars('u_0', h, h, latex_name=r'u^0')
+  v0 = add_vars('v_0', h, h, latex_name=r'v^0')
+
+  # all_vars = [u, v, wtilde, mu0, muu, muv, phi, alpha, beta, gamma, phi0, u0, v0]
+
+  def replace_names(s, style='c'):
+    for a in all_vars:
+      s = a.replace_var_names(s, style)
+    return s
+
+  def set_modes(m):
+    for a in all_vars:
+      a.set_mode(m[0], m[1])
+
+  def print_eqns(expr, var):
+    # print 'Update equations for', var.name
+    update_expr = sympy.simplify(sympy.solve(expr, var()))[0]
+    # print 'C:'
+    out = replace_names(str(var()), 'c') + ' = ' + replace_names(sympy.printing.ccode(update_expr), 'c') + ';'
+    # get rid of pow(x, 2) and replace with x*x
+    p = re.compile('pow\((.+?), 2\)')
+    return p.sub(r'(\1*\1)', out)
+    # print '\nLatex:\n', replace_names(sympy.latex(update_expr, fold_short_frac=True), 'latex')
+    # print '\n'
+
+  def print_var_names():
+    print ', '.join(v.name for v in all_vars)
+
+  print_var_names()
+
+  code_dict = defaultdict(list)
+  for modes in ['ff', 'fb', 'fc', 'bf', 'bb', 'bc', 'cf', 'cb', 'cc']:
+    print '========== %s ==========' % modes
+    set_modes(modes)
+
+    expr = 2*wz()*(phi() - z()) + 2*wtilde()*(phi() - mu0() - muu()*u() - muv()*v()) + 2*gamma()*(phi() - phi0())
+    code_dict[modes].append(print_eqns(expr, phi))
+
+    expr = -2*wtilde()*muu()*(phi() - mu0() - muu()*u() - muv()*v()) + 2*beta()*u() + 2*gamma()*(u() - u0()) - alpha()*(8*u.dx2() + 4*(v.dxdy() + u.dy2()))
+    code_dict[modes].append(print_eqns(expr, u))
+
+    expr = -2*wtilde()*muv()*(phi() - mu0() - muu()*u() - muv()*v()) + 2*beta()*v() + 2*gamma()*(v() - v0()) - alpha()*(8*v.dy2() + 4*(u.dxdy() + v.dx2()))
+    code_dict[modes].append(print_eqns(expr, v))
+
+    print code_dict[modes]
+
+  code_template = '''
+for (int i = 0; i < grid_size; ++i) {{
+  for (int j = 0; j < grid_size; ++j) {{
+    if (i == 0) {{
+
+      if (j == 0) {{
+
+        {exprs[ff]}
+
+      }} else if (j == grid_size-1) {{
+
+        {exprs[fb]}
+
+      }} else {{
+
+        {exprs[fc]}
+
+      }}
+
+    }} else if (i == grid_size-1) {{
+
+      if (j == 0) {{
+
+        {exprs[bf]}
+
+      }} else if (j == grid_size-1) {{
+
+        {exprs[bb]}
+
+      }} else {{
+
+        {exprs[bc]}
+
+      }}
+
+    }} else {{
+
+      if (j == 0) {{
+
+        {exprs[cf]}
+
+      }} else if (j == grid_size-1) {{
+
+        {exprs[cb]}
+
+      }} else {{
+
+        {exprs[cc]}
+
+      }}
+
+    }}
+  }}
+}}
+  '''
+  print code_template.format(exprs=dict((k, '\n\n        '.join(v)) for (k, v) in code_dict.iteritems()))
+
 if __name__ == '__main__':
   main()
