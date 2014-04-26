@@ -37,6 +37,7 @@ class TrackerParams(object):
 
     self.reweighting_iters = 5
     self.max_inner_iters = 10
+    self.lin_solver_iters = 10
 
     # Observation parameters
     self.tsdf_trunc_dist = 10.
@@ -107,13 +108,16 @@ class TrackingOptimizationProblem(object):
   def set_observation(self, obs, weights):
     self.observation_cost.set_observation(obs, weights)
 
-  def optimize(self, init_state):
+  def optimize(self, init_phi, init_u_x, init_u_y):
     def _optimize_once(state):
       opt_result = self.opt.optimize(state.pack())
       result = State.FromPacked(self.gp, opt_result['x'])
       return result, opt_result
 
     assert self.params.reweighting_iters >= 1
+
+    init_state = State(self.gp, init_phi, init_u_x, init_u_y)
+
     if self.params.reweighting_iters == 1:
       return _optimize_once(init_state)
 
@@ -122,9 +126,224 @@ class TrackingOptimizationProblem(object):
       state, opt_result = _optimize_once(curr_state)
 
       flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
-      # self.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
-      self.agreement_cost.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights)
+      self.agreement_cost.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
 
+      results.append(state)
+      opt_results.append(opt_result)
+      curr_state = state
+
+    print results[-1].u_x
+    return results[-1], opt_results[-1]
+
+
+class TrackingOptimizationProblem2(object):
+  def __init__(self, grid_params, params):
+    assert isinstance(grid_params, GridParams) and isinstance(params, TrackerParams)
+    self.gp, self.params = grid_params, params
+
+    # self.flow_norm_cost = FlowNormCost(self.u_x_vars, self.u_y_vars)
+    # self.opt.add_cost(self.flow_norm_cost, self.params.flow_norm_coeff)
+
+    # self.flow_rigidity_cost = FlowRigidityCost(self.u_x_vars, self.u_y_vars)
+    # self.opt.add_cost(self.flow_rigidity_cost, self.params.flow_rigidity_coeff)
+
+    # self.observation_cost = ObservationCost(self.phi_vars)
+    # self.opt.add_cost(self.observation_cost, self.params.observation_coeff)
+
+    # self.agreement_cost = AgreementCost(self.phi_vars, self.u_x_vars, self.u_y_vars)
+    # self.opt.add_cost(self.agreement_cost, self.params.agreement_coeff)
+
+    # self.prev_weights = None
+
+  def set_prev_phi_and_weights(self, prev_phi, weight):
+    self.prev_phi, self.prev_weights = prev_phi, weight
+
+  def set_observation(self, obs, weight):
+    self.obs, self.obs_weight = obs, weight
+
+  @staticmethod
+  def _solve_linearized_problem(num_iters, h, phi_init, u_init, v_init, z, w_z, mu_0, mu_u, mu_v, wtilde, alpha, beta, gamma, phi_0, u_0, v_0):
+    import scipy.weave
+    code = r'''
+    typedef blitz::Array<double, 2> Array;
+
+    for (int iter = 0; iter < num_iters; ++iter) {
+      Array& phi = (iter % 2 == 0) ? phi_input : mirror_phi_input;
+      Array& u = (iter % 2 == 0) ? u_input : mirror_u_input;
+      Array& v = (iter % 2 == 0) ? v_input : mirror_v_input;
+
+      Array& mirror_phi = (iter % 2 == 1) ? phi_input : mirror_phi_input;
+      Array& mirror_u = (iter % 2 == 1) ? u_input : mirror_u_input;
+      Array& mirror_v = (iter % 2 == 1) ? v_input : mirror_v_input;
+
+      for (int i = 0; i < grid_size; ++i) {
+        for (int j = 0; j < grid_size; ++j) {
+          if (i == 0) {
+
+            if (j == 0) {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 2*alpha*v(i+1,j+1) - 2*alpha*v(i+1,j) - 2*alpha*v(i,j+1) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = (2*alpha*u(i+1,j+1) - 2*alpha*u(i+1,j) - 2*alpha*u(i,j+1) + 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            } else if (j == grid_size-1) {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = (-2*alpha*u(i+1,j-1) + 2*alpha*u(i+1,j) + 2*alpha*u(i,j-1) - 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            } else {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + alpha*v(i+1,j+1) - alpha*v(i+1,j-1) - alpha*v(i,j+1) + alpha*v(i,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)));
+
+              mirror_v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j-1) - alpha*u(i,j+1) + alpha*u(i,j-1) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            }
+
+          } else if (i == grid_size-1) {
+
+            if (j == 0) {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (-4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + 2*alpha*v(i,j+1) - 2*alpha*v(i,j) - 2*alpha*v(i-1,j+1) + 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = (2*alpha*u(i,j+1) - 2*alpha*u(i,j) - 2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            } else if (j == grid_size-1) {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (-4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) - 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + 2*alpha*v(i-1,j-1) - 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = (-2*alpha*u(i,j-1) + 2*alpha*u(i,j) + 2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            } else {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + alpha*v(i,j+1) - alpha*v(i,j-1) - alpha*v(i-1,j+1) + alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)));
+
+              mirror_v(i,j) = (alpha*u(i,j+1) - alpha*u(i,j-1) - alpha*u(i-1,j+1) + alpha*u(i-1,j-1) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            }
+
+          } else {
+
+            if (j == 0) {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 4*alpha*u(i-1,j) + alpha*v(i+1,j+1) - alpha*v(i+1,j) - alpha*v(i-1,j+1) + alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j) - alpha*u(i-1,j+1) + alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)));
+
+            } else if (j == grid_size-1) {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) + 4*alpha*u(i-1,j) - alpha*v(i+1,j-1) + alpha*v(i+1,j) + alpha*v(i-1,j-1) - alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = (-alpha*u(i+1,j-1) + alpha*u(i+1,j) + alpha*u(i-1,j-1) - alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)));
+
+            } else {
+
+              mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+              mirror_u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + 4*alpha*u(i-1,j) + (1.0L/2.0L)*alpha*v(i+1,j+1) - 1.0L/2.0L*alpha*v(i+1,j-1) - 1.0L/2.0L*alpha*v(i-1,j+1) + (1.0L/2.0L)*alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+              mirror_v(i,j) = ((1.0L/2.0L)*alpha*u(i+1,j+1) - 1.0L/2.0L*alpha*u(i+1,j-1) - 1.0L/2.0L*alpha*u(i-1,j+1) + (1.0L/2.0L)*alpha*u(i-1,j-1) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+            }
+
+          }
+        }
+      } // end iteration over grid
+
+      // printf("iter %d done\n", iter);
+    }
+    '''
+
+    assert u_init.shape[0] == u_init.shape[1]
+    assert u_init.shape == v_init.shape == phi_init.shape == z.shape == w_z.shape == mu_0.shape == mu_u.shape == mu_v.shape == wtilde.shape == phi_0.shape == u_0.shape == v_0.shape
+
+    grid_size = u_init.shape[0]
+
+    phi = phi_init.astype(float).copy()
+    u = u_init.astype(float).copy()
+    v = v_init.astype(float).copy()
+
+    mirror_phi, mirror_u, mirror_v = phi.copy(), u.copy(), v.copy()
+
+    local_dict = {
+      'phi_input': phi,
+      'u_input': u,
+      'v_input': v,
+      'mirror_phi_input': mirror_phi,
+      'mirror_u_input': mirror_u,
+      'mirror_v_input': mirror_v,
+
+      'z': z,
+      'w_z': w_z,
+      'mu_0': mu_0,
+      'mu_u': mu_u,
+      'mu_v': mu_v,
+      'wtilde': wtilde,
+      'alpha': alpha,
+      'beta': beta,
+      'gamma': gamma,
+      'phi_0': phi_0,
+      'u_0': u_0,
+      'v_0': v_0,
+
+      'h': h,
+      'grid_size': grid_size,
+      'num_iters': num_iters
+    }
+
+    scipy.weave.inline(
+      code,
+      local_dict.keys(),
+      local_dict,
+      type_converters=scipy.weave.converters.blitz
+    )
+
+    return (phi, u, v) if (num_iters % 2 == 0) else (mirror_phi, mirror_u, mirror_v)
+
+  def _optimize_once(self, init_state, flowed_prev_weights):
+    # Levenberg-Marquardt for the fixed-weight problems
+    assert self.params.agreement_coeff == 1 and self.params.observation_coeff == 1
+    phi, u, v = self._solve_linearized_problem(
+      self.params.lin_solver_iters,
+      1.,
+      init_state.phi, init_state.u_x, init_state.u_y,
+      self.obs, self.obs_weight,
+      mu_0, mu_u, mu_v,#########################################TODO
+      flowed_prev_weights,
+      self.params.flow_rigidity_coeff, self.params.flow_norm_coeff,
+      gamma, phi_0, u_0, v_0#########################################TODO
+    )
+
+  def optimize(self, init_phi, init_u_x, init_u_y):
+    assert self.params.reweighting_iters >= 1
+
+    init_state = State(self.gp, init_phi, init_u_x, init_u_y)
+
+    if self.params.reweighting_iters == 1:
+      return _optimize_once(init_state, self.prev_weights)
+
+    curr_state, results, opt_results = init_state, [], []
+    flowed_prev_weights = self.prev_weights
+    for i in range(self.params.reweighting_iters):
+      state, opt_result = self._optimize_once(curr_state, flowed_prev_weights)
+
+      flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
 
       results.append(state)
       opt_results.append(opt_result)
@@ -157,8 +376,12 @@ def run_one_step(grid_params, tracker_params, obs_tsdf, obs_weight, obs_always_t
   # Run optimization
   # initialization: previous phi, zero flow
   init_u = np.zeros(init_phi.shape + (2,))
-  init_state = State(grid_params, init_phi, init_u[:,:,0], init_u[:,:,1])
-  result, opt_result = tracker.optimize(init_state)
+
+  import time
+  t_start = time.time()
+  result, opt_result = tracker.optimize(init_phi, init_u[:,:,0], init_u[:,:,1])
+  print '======== Optimization took %f sec ========' % (time.time() - t_start)
+
   if return_full:
     problem_data['result'], problem_data['opt_result'] = result, opt_result
 
