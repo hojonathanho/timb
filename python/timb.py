@@ -122,7 +122,9 @@ class TrackingOptimizationProblem(object):
       state, opt_result = _optimize_once(curr_state)
 
       flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
-      self.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
+      # self.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
+      self.agreement_cost.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights)
+
 
       results.append(state)
       opt_results.append(opt_result)
