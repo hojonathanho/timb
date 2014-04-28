@@ -82,12 +82,9 @@ typedef boost::shared_ptr<CostFunc> CostFuncPtr;
 
 
 struct OptParams {
-  double init_trust_region_size;
-  // double trust_shrink_ratio;
-  // double trust_expand_ratio;
-  double min_trust_region_size;
-  // double min_approx_improve;
-  // double improve_ratio_threshold;
+  double init_damping;
+  double init_damping_increase_factor;
+  double min_scaling;
   double grad_convergence_tol;
   double approx_improve_rel_tol;
   int max_iter;

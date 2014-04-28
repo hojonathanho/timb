@@ -50,9 +50,7 @@ struct PyOptimizer : public Optimizer {
   py::dict py_optimize(py::object py_start_x) {
     VectorXd start_x;
     util::from1darray(py_start_x, start_x);
-    OptResultPtr result = optimize(start_x);
-    // return PyOptResultPtr(new PyOptResult(result));
-    return optresult_to_dict(result);
+    return optresult_to_dict(optimize(start_x));
   }
 };
 typedef boost::shared_ptr<PyOptimizer> PyOptimizerPtr;
@@ -130,8 +128,9 @@ BOOST_PYTHON_MODULE(ctimb) {
     ;
 
   py::class_<OptParams>("OptParams", py::no_init)
-    .def_readwrite("init_trust_region_size", &OptParams::init_trust_region_size)
-    .def_readwrite("min_trust_region_size", &OptParams::min_trust_region_size)
+    .def_readwrite("init_damping", &OptParams::init_damping)
+    .def_readwrite("init_damping_increase_factor", &OptParams::init_damping_increase_factor)
+    .def_readwrite("min_scaling", &OptParams::min_scaling)
     .def_readwrite("grad_convergence_tol", &OptParams::grad_convergence_tol)
     .def_readwrite("approx_improve_rel_tol", &OptParams::approx_improve_rel_tol)
     .def_readwrite("max_iter", &OptParams::max_iter)

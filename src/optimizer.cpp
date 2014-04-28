@@ -12,12 +12,9 @@ using std::map;
 #include <Eigen/Eigenvalues>
 
 OptParams::OptParams() :
-  init_trust_region_size(1e4),
-  // trust_shrink_ratio(.1),
-  // trust_expand_ratio(2.),
-  min_trust_region_size(1e-4),
-  // min_approx_improve(1e-6),
-  // improve_ratio_threshold(.25),
+  init_damping(1e-5),
+  init_damping_increase_factor(2.),
+  min_scaling(1e-5),
   grad_convergence_tol(1e-8),
   approx_improve_rel_tol(1e-8),
   max_iter(100),
@@ -27,15 +24,17 @@ OptParams::OptParams() :
 
 string OptParams::str() const {
   return (boost::format(
-    "init_trust_region_size:% 3.2e\n"
-    "min_trust_region_size:% 3.2e\n"
+    "init_damping:% 3.2e\n"
+    "init_damping_increase_factor:% 3.2e\n"
+    "min_scaling:% 3.2e\n"
     "grad_convergence_tol:% 3.2e\n"
     "approx_improve_rel_tol:% 3.2e\n"
     "max_iter:% d\n"
     "check_linearizations:% d"
     )
-    % init_trust_region_size
-    % min_trust_region_size
+    % init_damping
+    % init_damping_increase_factor
+    % min_scaling
     % grad_convergence_tol
     % approx_improve_rel_tol
     % max_iter
@@ -108,7 +107,6 @@ struct OptimizerImpl {
   }
 
   void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& model_cost_vals, const VectorXd& new_cost_vals) {
-                       // double old_merit, double approx_merit_improve, double exact_merit_improve, double merit_improve_ratio) {
     assert(m_costs.size() == model_cost_vals.size() && m_costs.size() == new_cost_vals.size() && m_costs.size() == old_cost_vals.size());
 
     LOG_INFO("%15s | %10s | %10s | %10s | %10s", "", "oldexact", "dapprox", "dexact", "ratio");
@@ -123,7 +121,6 @@ struct OptimizerImpl {
         LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10s", m_costs[i]->name().c_str(), old_cost_vals[i], approx_improve, exact_improve, "  ------  ");
       }
     }
-    // LOG_INFO("%15s | %10.3e | %10.3e | %10.3e | %10.3e", "TOTAL", old_merit, approx_merit_improve, exact_merit_improve, merit_improve_ratio);
   }
 
   void numdiff_cost(CostFuncPtr cost, const VectorXd& x0, vector<AffExpr>& out_exprs) {
@@ -264,10 +261,8 @@ struct OptimizerImpl {
     bool converged = false;
     int iter = 0;
 
-    double min_scaling = 1e-5;
-
-    double damping = 1e-5;
-    double damping_increase_factor = 2.;
+    double damping = m_params.init_damping;
+    double damping_increase_factor = m_params.init_damping_increase_factor;
 
     bool all_costs_linear = true;
     for (CostFuncPtr cost : m_costs) {
@@ -287,7 +282,7 @@ struct OptimizerImpl {
     // Data for the current linearization
     VectorXd fvec(num_residuals());
     SparseMatrixT fjac(num_residuals(), num_vars());
-    SparseMatrixT scaling(num_vars(), num_vars());
+    SparseMatrixT scaling(num_vars(), num_vars()); // scaling for axis-aligned ellipse trust region
 
     // Eigen::CholmodDecomposition<SparseMatrixT> solver;
     Eigen::SimplicialLDLT<SparseMatrixT> solver;
@@ -316,7 +311,7 @@ struct OptimizerImpl {
         x_changed = true;
 
         for (int i = 0; i < num_vars(); ++i) {
-          scaling.coeffRef(i,i) = fmax(min_scaling, fjac.col(i).norm());
+          scaling.coeffRef(i,i) = fmax(m_params.min_scaling, fjac.col(i).norm());
         }
         scaling.makeCompressed();
 
@@ -390,7 +385,7 @@ struct OptimizerImpl {
           update_result(result, fvec);
           x_changed = true;
           for (int i = 0; i < num_vars(); ++i) {
-            scaling.coeffRef(i,i) = fmax(min_scaling, fmax(scaling.coeffRef(i,i), fjac.col(i).norm()));
+            scaling.coeffRef(i,i) = fmax(m_params.min_scaling, fmax(scaling.coeffRef(i,i), fjac.col(i).norm()));
           }
 
           damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));
