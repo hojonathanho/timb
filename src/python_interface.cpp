@@ -134,6 +134,7 @@ BOOST_PYTHON_MODULE(ctimb) {
     .def_readwrite("grad_convergence_tol", &OptParams::grad_convergence_tol)
     .def_readwrite("approx_improve_rel_tol", &OptParams::approx_improve_rel_tol)
     .def_readwrite("max_iter", &OptParams::max_iter)
+    .def_readwrite("enable_var_scaling", &OptParams::enable_var_scaling)
     .def_readwrite("check_linearizations", &OptParams::check_linearizations)
     .def_readwrite("keep_results_over_iterations", &OptParams::keep_results_over_iterations)
     ;

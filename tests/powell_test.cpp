@@ -98,6 +98,7 @@ struct PowellCost4 : public CostFunc {
 
 static OptResultPtr optimize_powell_scaled(const VectorXd& scales) {
   Optimizer opt;
+  opt.params().enable_var_scaling = true;
   opt.params().check_linearizations = true;
 
   vector<Var> varvec;
@@ -119,6 +120,7 @@ static OptResultPtr optimize_powell_scaled(const VectorXd& scales) {
 
 TEST(PowellTest, ObjectiveValue) {
   Optimizer opt;
+  opt.params().enable_var_scaling = true;
   opt.params().check_linearizations = true;
 
   vector<Var> varvec;

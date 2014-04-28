@@ -18,6 +18,7 @@ OptParams::OptParams() :
   grad_convergence_tol(1e-8),
   approx_improve_rel_tol(1e-8),
   max_iter(100),
+  enable_var_scaling(false),
   check_linearizations(false),
   keep_results_over_iterations(false)
 { }
@@ -30,6 +31,7 @@ string OptParams::str() const {
     "grad_convergence_tol:% 3.2e\n"
     "approx_improve_rel_tol:% 3.2e\n"
     "max_iter:% d\n"
+    "enable_var_scaling:% d"
     "check_linearizations:% d"
     )
     % init_damping
@@ -38,6 +40,7 @@ string OptParams::str() const {
     % grad_convergence_tol
     % approx_improve_rel_tol
     % max_iter
+    % enable_var_scaling
     % check_linearizations
   ).str();
 }
@@ -310,8 +313,12 @@ struct OptimizerImpl {
         update_result(result, fvec);
         x_changed = true;
 
-        for (int i = 0; i < num_vars(); ++i) {
-          scaling.coeffRef(i,i) = fmax(m_params.min_scaling, fjac.col(i).norm());
+        if (m_params.enable_var_scaling) {
+          for (int i = 0; i < num_vars(); ++i) {
+            scaling.coeffRef(i,i) = fmax(m_params.min_scaling, fjac.col(i).norm());
+          }
+        } else {
+          scaling.setIdentity();
         }
         scaling.makeCompressed();
 
@@ -384,8 +391,10 @@ struct OptimizerImpl {
           eval_jacobian(result->x, fjac); ++result->n_jacobian_evals;
           update_result(result, fvec);
           x_changed = true;
-          for (int i = 0; i < num_vars(); ++i) {
-            scaling.coeffRef(i,i) = fmax(m_params.min_scaling, fmax(scaling.coeffRef(i,i), fjac.col(i).norm()));
+          if (m_params.enable_var_scaling) {
+            for (int i = 0; i < num_vars(); ++i) {
+              scaling.coeffRef(i,i) = fmax(m_params.min_scaling, fmax(scaling.coeffRef(i,i), fjac.col(i).norm()));
+            }
           }
 
           damping *= fmax(1/3., 1. - pow(2*ratio - 1, 3));

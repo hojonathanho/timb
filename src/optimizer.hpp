@@ -88,6 +88,7 @@ struct OptParams {
   double grad_convergence_tol;
   double approx_improve_rel_tol;
   int max_iter;
+  bool enable_var_scaling; // if true, use ellipsoidal trust region (necessary for scale invariance)
   bool check_linearizations;
   bool keep_results_over_iterations;
 
