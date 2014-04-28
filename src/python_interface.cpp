@@ -14,28 +14,6 @@
 
 namespace py = boost::python;
 
-// struct PyOptResult : public OptResult {
-//   py::object py_x;
-//   py::list py_x_over_iters;
-//   py::object py_cost_detail;
-//   py::object py_cost_over_iters;
-//   PyOptResult(OptResultPtr o) {
-//     status = o->status;
-//     py_x = util::toNdarray1(o->x.data(), o->x.size());
-//     for (const VectorXd& x : o->x_over_iters) {
-//       py_x_over_iters.append(util::toNdarray1(x.data(), x.size()));
-//     }
-//     cost = o->cost;
-//     py_cost_detail = util::toNdarray1(o->cost_detail.data(), o->cost_detail.size());
-//     py_cost_over_iters = util::toPyList(o->cost_over_iters);
-//     n_func_evals = o->n_func_evals;
-//     n_jacobian_evals = o->n_jacobian_evals;
-//     n_qp_solves = o->n_qp_solves;
-//     n_iters = o->n_iters;
-//   }
-// };
-// typedef boost::shared_ptr<PyOptResult> PyOptResultPtr;
-
 py::dict optresult_to_dict(OptResultPtr o) {
   py::dict d;
   d["status"] = o->status;
@@ -103,38 +81,6 @@ static py::object py_apply_flow_to_weights(const GridParams& gp, py::object py_p
   return to_numpy(flowed_phi);
 }
 
-// static py::object py_march_from_zero_crossing(py::object py_phi, bool propagate_sign=true, py::object py_ignore_mask=py::object()) {
-//   MatrixXd phi;
-//   util::fromNdarray(py_phi, phi);
-
-//   boost::scoped_ptr<MatrixXi> pignore_mask;
-//   if (py_ignore_mask != py::object()) {
-//     pignore_mask.reset(new MatrixXi);
-//     util::fromNdarray(py_ignore_mask, *pignore_mask);
-//   }
-
-//   MatrixXd out;
-//   march_from_zero_crossing(phi, propagate_sign, pignore_mask.get(), out);
-
-//   return util::toNdarray(out);
-// }
-// BOOST_PYTHON_FUNCTION_OVERLOADS(py_march_from_zero_crossing_overloads, py_march_from_zero_crossing, 1, 3)
-
-// static py::object py_compute_flowed_precision(const GridParams& gp, py::object py_precision_diag, py::object py_u_x, py::object py_u_y, bool direct) {
-//   DoubleField u_x(gp), u_y(gp);
-//   from_numpy(py_u_x, u_x);
-//   from_numpy(py_u_y, u_y);
-//   VectorXd precision_diag;
-//   util::from1darray(py_precision_diag, precision_diag);
-//   VectorXd out;
-//   if (direct) {
-//     compute_flowed_precision_direct(precision_diag, u_x, u_y, out);
-//   } else {
-//     compute_flowed_precision(precision_diag, u_x, u_y, out);
-//   }
-//   return util::toNdarray1(out.data(), out.size());
-// }
-
 static string py_print_gridparams(const GridParams* gp) {
   return (boost::format("GridParams: x: [%f, %f], nx: %d, y: [%f, %f], ny: %d")
     % gp->xmin % gp->xmax % gp->nx % gp->ymin % gp->ymax % gp->ny).str();
@@ -180,15 +126,6 @@ BOOST_PYTHON_MODULE(ctimb) {
     .value("OPT_CONVERGED", OPT_CONVERGED)
     .value("OPT_ITER_LIMIT", OPT_ITER_LIMIT)
     ;
-
-  // py::class_<PyOptResult, PyOptResultPtr>("OptResult", py::no_init)
-  //   .def_readonly("status", &PyOptResult::status)
-  //   .def_readonly("x", &PyOptResult::py_x)
-  //   .def_readonly("cost", &PyOptResult::cost)
-  //   .def_readonly("cost_detail", &PyOptResult::py_cost_detail)
-  //   .def_readonly("cost_over_iters", &PyOptResult::py_cost_over_iters)
-  //   .def_readonly("x_over_iters", &PyOptResult::py_x_over_iters)
-  //   ;
 
   py::class_<OptParams>("OptParams", py::no_init)
     .def_readwrite("init_trust_region_size", &OptParams::init_trust_region_size)
@@ -259,10 +196,7 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::def("make_double_field", &py_make_double_field);
   py::def("apply_rigid_transform", &py_apply_rigid_transform);
 
-
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
   py::def("apply_flow_to_weights", &py_apply_flow_to_weights);
-  // py::def("march_from_zero_crossing", py_march_from_zero_crossing, py_march_from_zero_crossing_overloads(py::args("phi", "propagate_sign", "ignore_mask"), "docstring"));
-  // py::def("compute_flowed_precision", &py_compute_flowed_precision);
 }
