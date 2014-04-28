@@ -116,6 +116,8 @@ BOOST_PYTHON_MODULE(ctimb) {
   util::LoggingInit();
   util::PythonInit();
 
+  ////////// Levenberg-Marquardt optimizer //////////
+
   py::class_<Var>("Var")
     .add_property("name", &Var::name)
     .def("__repr__", &Var::name)
@@ -152,6 +154,9 @@ BOOST_PYTHON_MODULE(ctimb) {
     // Don't expose anything. Only subclasses should be used from Python
     ;
 
+
+  ////////// Structures and costs for tracking optimization problem //////////
+
   py::class_<GridParams>("GridParams", py::init<double, double, double, double, int, int>())
     .def_readonly("xmin", &GridParams::xmin)
     .def_readonly("xmax", &GridParams::xmax)
@@ -167,7 +172,6 @@ BOOST_PYTHON_MODULE(ctimb) {
 
   py::class_<VarField>("VarField", py::no_init);
   py::class_<DoubleField>("DoubleField", py::no_init);
-
 
   py::class_<ExampleCost, ExampleCostPtr, py::bases<CostFunc> >("ExampleCost", py::init<const Var&, double, const string&>());
   py::class_<FlowNormCost, FlowNormCostPtr, py::bases<CostFunc> >("FlowNormCost", py::init<const VarField&, const VarField&>());
@@ -192,11 +196,14 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::class_<DisplacementCost, DisplacementCostPtr, py::bases<CostFunc> >("DisplacementCost",
       py::init<const Var&, const Var&, const Var&>());
 
-
-  py::def("make_double_field", &py_make_double_field);
-  py::def("apply_rigid_transform", &py_apply_rigid_transform);
+  ////////// Utilities -- tracking problem //////////
 
   py::def("make_var_field", &py_make_var_field);
   py::def("apply_flow", &py_apply_flow);
   py::def("apply_flow_to_weights", &py_apply_flow_to_weights);
+
+  ////////// Utilities -- rigid problem (KinectFusion) //////////
+
+  py::def("make_double_field", &py_make_double_field);
+  py::def("apply_rigid_transform", &py_apply_rigid_transform);
 }
