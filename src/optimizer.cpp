@@ -31,7 +31,7 @@ string OptParams::str() const {
     "grad_convergence_tol:% 3.2e\n"
     "approx_improve_rel_tol:% 3.2e\n"
     "max_iter:% d\n"
-    "enable_var_scaling:% d"
+    "enable_var_scaling:% d\n"
     "check_linearizations:% d"
     )
     % init_damping

@@ -362,9 +362,9 @@ class TrackingOptimizationProblem2(object):
         info['n_qp_solves'] += 1
 
         self.logger.debug('Extracting model costs')
-        model_cost = ???
+        #model_cost = ???
         self.logger.debug('Evaluating true objective')
-        new_cost = ???
+        #new_cost = ???
 
         approx_merit_improve = curr_cost - model_cost
         exact_merit_improve = curr_cost - new_cost
