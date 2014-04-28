@@ -162,7 +162,9 @@ class TrackingOptimizationProblem2(object):
     self.obs, self.obs_weight = obs, weight
 
   @staticmethod
-  def _solve_linearized_problem(num_iters, h, phi_init, u_init, v_init, z, w_z, mu_0, mu_u, mu_v, wtilde, alpha, beta, gamma, phi_0, u_0, v_0):
+  def _solve_quadratic_problem(num_iters, h, phi_init, u_init, v_init, z, w_z, mu_0, mu_u, mu_v, wtilde, alpha, beta, gamma, phi_0, u_0, v_0):
+    '''Solves linear systems that arise from Levenberg-Marquardt steps'''
+
     import scipy.weave
     code = r'''
     typedef blitz::Array<double, 2> Array;
@@ -317,18 +319,108 @@ class TrackingOptimizationProblem2(object):
     return (phi, u, v) if (num_iters % 2 == 0) else (mirror_phi, mirror_u, mirror_v)
 
   def _optimize_once(self, init_state, flowed_prev_weights):
-    # Levenberg-Marquardt for the fixed-weight problems
+    '''Levenberg-Marquardt for the fixed-weight problems'''
+
     assert self.params.agreement_coeff == 1 and self.params.observation_coeff == 1
-    phi, u, v = self._solve_linearized_problem(
-      self.params.lin_solver_iters,
-      1.,
-      init_state.phi, init_state.u_x, init_state.u_y,
-      self.obs, self.obs_weight,
-      mu_0, mu_u, mu_v,#########################################TODO
-      flowed_prev_weights,
-      self.params.flow_rigidity_coeff, self.params.flow_norm_coeff,
-      gamma, phi_0, u_0, v_0#########################################TODO
-    )
+
+    info = {
+      'n_qp_solves': 0,
+      'n_func_evals': 0,
+      'n_iters': 0
+    }
+    status = 'incomplete'
+
+    exit = False
+    curr_x = start_x
+    curr_cost, curr_cost_detail = self._eval_true_objective(start_x)
+    curr_iter = 0
+    trust_region_size = self.init_trust_region_size
+    costs_over_iters, x_over_iters = [], []
+    while True:
+      curr_iter += 1
+      costs_over_iters.append(curr_cost)
+      x_over_iters.append(curr_x)
+      self.logger.info('Starting SQP iteration %d' % curr_iter)
+
+      while trust_region_size >= self.min_trust_region_size:
+        self._set_trust_region(trust_region_size, curr_x)
+        self.logger.debug('Solving QP')
+        self.timer.start('solve_qp')
+
+        phi, u, v = self._solve_quadratic_problem(
+          self.params.lin_solver_iters,
+          1.,
+          init_state.phi, init_state.u_x, init_state.u_y,
+          self.obs, self.obs_weight,
+          mu_0, mu_u, mu_v,#########################################TODO
+          flowed_prev_weights,
+          self.params.flow_rigidity_coeff, self.params.flow_norm_coeff,
+          gamma, phi_0, u_0, v_0#########################################TODO
+        )
+
+        self.timer.end('solve_qp')
+        info['n_qp_solves'] += 1
+
+        self.logger.debug('Extracting model costs')
+        model_cost = ???
+        self.logger.debug('Evaluating true objective')
+        new_cost = ???
+
+        approx_merit_improve = curr_cost - model_cost
+        exact_merit_improve = curr_cost - new_cost
+
+        if approx_merit_improve < -1e-5:
+          self.logger.warn("approximate merit function got worse (%.3e). (convexification is probably wrong to zeroth order)" % approx_merit_improve)
+
+        if approx_merit_improve < self.min_approx_improve:
+          self.logger.info("converged because improvement was small (%.3e < %.3e)" % (approx_merit_improve, self.min_approx_improve))
+          status = 'converged'
+          exit = True
+          break
+
+        merit_improve_ratio = exact_merit_improve / approx_merit_improve
+        if exact_merit_improve < 0 or merit_improve_ratio < self.improve_ratio_threshold:
+          trust_region_size *= self.trust_shrink_ratio
+          self.logger.info("shrunk trust region. new box size: %.4f" % trust_region_size)
+        else:
+          curr_x, curr_cost, curr_cost_detail = new_x, new_cost, new_cost_detail
+          trust_region_size *= self.trust_expand_ratio
+          self.logger.info("expanded trust region. new box size: %.4f" % trust_region_size)
+          break
+
+      if exit:
+        break
+
+      if trust_region_size < self.min_trust_region_size:
+        self.logger.info("converged because trust region is tiny")
+        status = 'converged'
+        exit = True
+        break
+
+      if curr_iter >= self.max_iter:
+        self.logger.warn("iteration limit")
+        status = 'iter_limit'
+        exit = True
+        break
+
+    assert exit
+    info['n_iters'] = curr_iter
+    costs_over_iters.append(curr_cost)
+    x_over_iters.append(curr_x)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   def optimize(self, init_phi, init_u_x, init_u_y):
     assert self.params.reweighting_iters >= 1
@@ -338,11 +430,14 @@ class TrackingOptimizationProblem2(object):
     if self.params.reweighting_iters == 1:
       return _optimize_once(init_state, self.prev_weights)
 
+    # IRLS loop: Set weights (according to u),
+    # solve fixed-weight problem starting from previous solution as initialization, repeat
     curr_state, results, opt_results = init_state, [], []
     flowed_prev_weights = self.prev_weights
     for i in range(self.params.reweighting_iters):
+      # solve fixed-weight subproblem
       state, opt_result = self._optimize_once(curr_state, flowed_prev_weights)
-
+      # recalculate weights
       flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
 
       results.append(state)
