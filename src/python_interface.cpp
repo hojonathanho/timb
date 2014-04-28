@@ -52,6 +52,16 @@ struct PyOptimizer : public Optimizer {
     util::from1darray(py_start_x, start_x);
     return optresult_to_dict(optimize(start_x));
   }
+
+  void py_add_intermediate_callback(py::object fn) {
+    add_intermediate_callback(
+      [fn](const VectorXd& prev_x, const VectorXd& x,
+          double true_old_cost, double true_improvement,
+          double model_improvement, double ratio) {
+        fn(util::toNdarray(prev_x), util::toNdarray(x), true_old_cost, true_improvement, model_improvement, ratio);
+      }
+    );
+  }
 };
 typedef boost::shared_ptr<PyOptimizer> PyOptimizerPtr;
 
@@ -92,6 +102,36 @@ DoubleField py_make_double_field(const GridParams& gp, py::object py_gdata) {
 
 py::object py_apply_rigid_transform(const DoubleField &phi, double dx, double dy, double dth) {
   return to_numpy(apply_rigid_transform(phi, dx, dy, dth));
+}
+
+double py_timb_problem_eval_objective(
+  const GridParams& gp,
+
+  py::object py_phi,
+  py::object py_u,
+  py::object py_v,
+
+  // observation values and weights
+  py::object py_z,
+  py::object py_w_z,
+
+  // prev phi
+  py::object py_prev_phi,
+  // flowed weights
+  py::object py_wtilde,
+
+  double alpha, // strain cost coeff
+  double beta // norm cost coeff
+) {
+  DoubleField phi(gp), u(gp), v(gp), z(gp), w_z(gp), prev_phi(gp), wtilde(gp);
+  from_numpy(py_phi, phi);
+  from_numpy(py_u, u);
+  from_numpy(py_v, v);
+  from_numpy(py_z, z);
+  from_numpy(py_w_z, w_z);
+  from_numpy(py_prev_phi, prev_phi);
+  from_numpy(py_wtilde, wtilde);
+  return timb_problem_eval_objective(phi, u, v, z, w_z, prev_phi, wtilde, alpha, beta);
 }
 
 struct ExampleCost : public CostFunc {
@@ -146,6 +186,7 @@ BOOST_PYTHON_MODULE(ctimb) {
     .def("add_cost", &PyOptimizer::py_add_cost_2)
     .def("set_cost_coeff", &PyOptimizer::set_cost_coeff)
     // TODO: callback
+    .def("add_intermediate_callback", &PyOptimizer::py_add_intermediate_callback)
     .def("num_vars", &PyOptimizer::num_vars)
     .def("optimize", &PyOptimizer::py_optimize)
     ;
@@ -206,4 +247,9 @@ BOOST_PYTHON_MODULE(ctimb) {
 
   py::def("make_double_field", &py_make_double_field);
   py::def("apply_rigid_transform", &py_apply_rigid_transform);
+
+
+  ////////// Tracking optimization problem hardcoded implementation //////////
+  py::def("timb_problem_eval_objective", &py_timb_problem_eval_objective);
+
 }

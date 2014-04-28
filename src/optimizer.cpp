@@ -71,6 +71,7 @@ struct OptimizerImpl {
   map<CostFunc*, CostFuncLinearizationPtr> m_cost2lin;
 
   vector<Optimizer::Callback> m_callbacks;
+  vector<Optimizer::IntermediateCallback> m_intermediate_callbacks;
 
   int num_vars() const { return m_var_factory.num_vars(); }
 
@@ -107,6 +108,10 @@ struct OptimizerImpl {
 
   void add_callback(Optimizer::Callback fn) {
     m_callbacks.push_back(fn);
+  }
+
+  void add_intermediate_callback(Optimizer::IntermediateCallback fn) {
+    m_intermediate_callbacks.push_back(fn);
   }
 
   void print_cost_info(const VectorXd& old_cost_vals, const VectorXd& model_cost_vals, const VectorXd& new_cost_vals) {
@@ -378,6 +383,14 @@ struct OptimizerImpl {
         double model_improvement = delta_x.dot(damping*scaling.transpose()*scaling*delta_x + lin_rhs);
         double ratio = true_improvement / model_improvement;
 
+        for (auto& fn : m_intermediate_callbacks) {
+          fn(
+            result->x, delta_x,
+            true_old_cost, true_improvement,
+            model_improvement, ratio
+          );
+        }
+
         // Adjust damping
         bool expanded_trust_region = false;
         if (ratio > 0) {
@@ -452,4 +465,5 @@ void Optimizer::add_vars(const vector<string>& names, vector<Var>& out) { m_impl
 void Optimizer::add_cost(CostFuncPtr cost, double coeff) { m_impl->add_cost(cost, coeff); }
 void Optimizer::set_cost_coeff(CostFuncPtr cost, double coeff) { m_impl->set_cost_coeff(cost, coeff); }
 void Optimizer::add_callback(const Callback &fn) { m_impl->add_callback(fn); }
+void Optimizer::add_intermediate_callback(const IntermediateCallback &fn) { m_impl->add_intermediate_callback(fn); }
 OptResultPtr Optimizer::optimize(const VectorXd& start_x) { return m_impl->optimize(start_x); }

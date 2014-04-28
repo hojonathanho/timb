@@ -83,6 +83,22 @@ class TrackingOptimizationProblem(object):
     self.gp, self.params = grid_params, params
 
     self.opt = Optimizer()
+
+    def cb(old_x, delta_x, true_old_cost, true_improvement, model_improvement, ratio):
+      print '===================CALLBACK==================='
+      print old_x, delta_x, true_old_cost, true_improvement, model_improvement, ratio
+      old_state = State.FromPacked(self.gp, old_x)
+      print 'Old cost from symbolic:', true_old_cost
+      print 'Old cost from hardcoded:', timb_problem_eval_objective(
+        self.gp,
+        old_state.phi, old_state.u_x, old_state.u_y,
+        self.obs, self.obs_weights,
+        self.prev_phi, self.curr_wtilde,
+        self.params.flow_rigidity_coeff, self.params.flow_norm_coeff
+      )
+      print '===================END CALLBACK==================='
+    self.opt.add_intermediate_callback(cb)
+
     self.phi_vars = make_var_field(self.opt, 'phi', self.gp)
     self.u_x_vars = make_var_field(self.opt, 'u_x', self.gp)
     self.u_y_vars = make_var_field(self.opt, 'u_y', self.gp)
@@ -104,9 +120,11 @@ class TrackingOptimizationProblem(object):
   def set_prev_phi_and_weights(self, prev_phi, weights):
     self.agreement_cost.set_prev_phi_and_weights(prev_phi, weights)
     self.prev_phi, self.prev_weights = prev_phi, weights
+    self.curr_wtilde = weights
 
   def set_observation(self, obs, weights):
     self.observation_cost.set_observation(obs, weights)
+    self.obs, self.obs_weights = obs, weights
 
   def optimize(self, init_phi, init_u_x, init_u_y):
     def _optimize_once(state):
@@ -126,6 +144,7 @@ class TrackingOptimizationProblem(object):
       state, opt_result = _optimize_once(curr_state)
 
       flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
+      self.curr_wtilde = flowed_prev_weights
       self.agreement_cost.set_prev_phi_and_weights(self.prev_phi, flowed_prev_weights) # prev_phi stays the same, only weights change
 
       results.append(state)

@@ -30,7 +30,7 @@ void apply_flow_to_weights(const ScalarField<ElemT, ExprT>& phi, const DoubleFie
   }
 }
 
-inline double eval_objective(
+inline double timb_problem_eval_objective(
   const DoubleField& phi,
   const DoubleField& u,
   const DoubleField& v,
@@ -39,10 +39,8 @@ inline double eval_objective(
   const DoubleField& z,
   const DoubleField& w_z,
 
-  // linearized flow
-  const DoubleField& mu_0,
-  const DoubleField& mu_u,
-  const DoubleField& mu_v,
+  // prev phi
+  const DoubleField& prev_phi,
   // flowed weights
   const DoubleField& wtilde,
 
@@ -60,33 +58,41 @@ inline double eval_objective(
   deriv_y_central(v, dv_dy);
 
   // Evaluate flowed phi for agreement cost (TODO: cache?)
-  DoubleField flowed_phi(phi.grid_params());
-  apply_flow(phi, u, v, flowed_phi);
+  DoubleField flowed_prev_phi(phi.grid_params());
+  apply_flow(prev_phi, u, v, flowed_prev_phi);
 
-  double val = 0.;
+  double obs_cost = 0.;
+  double agreement_cost = 0.;
+  double strain_cost = 0.;
+  double norm_cost = 0.;
 
   for (int i = 0; i < phi.grid_params().nx; ++i) {
     for (int j = 0; j < phi.grid_params().ny; ++j) {
 
       // observation cost
-      val += w_z(i,j) * square(z(i,j) - phi(i,j));
+      obs_cost += w_z(i,j) * square(z(i,j) - phi(i,j));
 
       // flow agreement cost
-      val += wtilde(i,j) * square(phi(i,j) - flowed_phi(i,j));
+      agreement_cost += wtilde(i,j) * square(phi(i,j) - flowed_prev_phi(i,j));
 
       // displacement strain cost
-      val += alpha * (4.*square(du_dx(i,j)) + 2.*square(dv_dx(i,j) + du_dy(i,j)) + 4.*square(dv_dy(i,j)));
+      strain_cost += alpha * (4.*square(du_dx(i,j)) + 2.*square(dv_dx(i,j) + du_dy(i,j)) + 4.*square(dv_dy(i,j)));
 
       // displacement norm cost
-      val += beta * (square(u(i,j)) + square(v(i,j)));
+      norm_cost += beta * (square(u(i,j)) + square(v(i,j)));
     }
   }
 
-  return val;
+  std::cout << "obs_cost: " << obs_cost
+    << "\nagreement_cost: " << agreement_cost
+    << "\nstrain_cost: " << strain_cost
+    << "\nnorm_cost: " << norm_cost << std::endl;
+
+  return obs_cost + agreement_cost + strain_cost + norm_cost;
 }
 
 
-inline double eval_model_objective(
+inline double timb_problem_eval_model_objective(
   const DoubleField& phi,
   const DoubleField& u,
   const DoubleField& v,

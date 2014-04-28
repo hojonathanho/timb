@@ -129,6 +129,9 @@ public:
   typedef boost::function<void(const VectorXd&)> Callback;
   void add_callback(const Callback &fn);
 
+  typedef boost::function<void(const VectorXd&, const VectorXd&, double, double, double, double)> IntermediateCallback;
+  void add_intermediate_callback(const IntermediateCallback &fn);
+
   int num_vars() const;
 
   OptResultPtr optimize(const VectorXd& start_x);
