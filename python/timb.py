@@ -440,18 +440,6 @@ class TrackingOptimizationProblem2(object):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
   def optimize(self, init_phi, init_u_x, init_u_y):
     assert self.params.reweighting_iters >= 1
 

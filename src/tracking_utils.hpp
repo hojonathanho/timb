@@ -4,6 +4,7 @@
 #include "grid.hpp"
 
 #include <Eigen/LU> // for determinant
+#include <math.h>
 
 static inline double square(double x) { return x*x; }
 
@@ -173,7 +174,7 @@ inline void timb_linearize_flowed_prev_phi(
 }
 
 
-inline void jacobi(
+inline void timb_solve_model_problem_jacobi(
   DoubleField& phi_input,
   DoubleField& u_input,
   DoubleField& v_input,
@@ -215,33 +216,35 @@ inline void jacobi(
     DoubleField& mirror_u = (iter % 2 == 1) ? u_input : mirror_u_input;
     DoubleField& mirror_v = (iter % 2 == 1) ? v_input : mirror_v_input;
 
+    static const double eps = 1e-20;
+
     for (int i = 0; i < grid_size; ++i) {
       for (int j = 0; j < grid_size; ++j) {
         if (i == 0) {
 
           if (j == 0) {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 2*alpha*v(i+1,j+1) - 2*alpha*v(i+1,j) - 2*alpha*v(i,j+1) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 2*alpha*v(i+1,j+1) - 2*alpha*v(i+1,j) - 2*alpha*v(i,j+1) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = (2*alpha*u(i+1,j+1) - 2*alpha*u(i+1,j) - 2*alpha*u(i,j+1) + 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = (2*alpha*u(i+1,j+1) - 2*alpha*u(i+1,j) - 2*alpha*u(i,j+1) + 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           } else if (j == grid_size-1) {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = (-2*alpha*u(i+1,j-1) + 2*alpha*u(i+1,j) + 2*alpha*u(i,j-1) - 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = (-2*alpha*u(i+1,j-1) + 2*alpha*u(i+1,j) + 2*alpha*u(i,j-1) - 2*alpha*u(i,j) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           } else {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + alpha*v(i+1,j+1) - alpha*v(i+1,j-1) - alpha*v(i,j+1) + alpha*v(i,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)));
+            mirror_u(i,j) = (-8*alpha*u(i+1,j) + 4*alpha*u(i+2,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + alpha*v(i+1,j+1) - alpha*v(i+1,j-1) - alpha*v(i,j+1) + alpha*v(i,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)) + eps);
 
-            mirror_v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j-1) - alpha*u(i,j+1) + alpha*u(i,j-1) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j-1) - alpha*u(i,j+1) + alpha*u(i,j-1) - 4*alpha*v(i+1,j) + 2*alpha*v(i+2,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           }
 
@@ -249,27 +252,27 @@ inline void jacobi(
 
           if (j == 0) {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (-4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + 2*alpha*v(i,j+1) - 2*alpha*v(i,j) - 2*alpha*v(i-1,j+1) + 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (-4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + 2*alpha*v(i,j+1) - 2*alpha*v(i,j) - 2*alpha*v(i-1,j+1) + 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = (2*alpha*u(i,j+1) - 2*alpha*u(i,j) - 2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = (2*alpha*u(i,j+1) - 2*alpha*u(i,j) - 2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           } else if (j == grid_size-1) {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (-4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) - 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + 2*alpha*v(i-1,j-1) - 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (-4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) - 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + 2*alpha*v(i-1,j-1) - 2*alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = (-2*alpha*u(i,j-1) + 2*alpha*u(i,j) + 2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = (-2*alpha*u(i,j-1) + 2*alpha*u(i,j) + 2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(-6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           } else {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + alpha*v(i,j+1) - alpha*v(i,j-1) - alpha*v(i-1,j+1) + alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)));
+            mirror_u(i,j) = (2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) - 8*alpha*u(i-1,j) + 4*alpha*u(i-2,j) + alpha*v(i,j+1) - alpha*v(i,j-1) - alpha*v(i-1,j+1) + alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_u(i,j)*mu_u(i,j))*wtilde(i,j)) + eps);
 
-            mirror_v(i,j) = (alpha*u(i,j+1) - alpha*u(i,j-1) - alpha*u(i-1,j+1) + alpha*u(i-1,j-1) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = (alpha*u(i,j+1) - alpha*u(i,j-1) - alpha*u(i-1,j+1) + alpha*u(i-1,j-1) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) - 4*alpha*v(i-1,j) + 2*alpha*v(i-2,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           }
 
@@ -277,27 +280,27 @@ inline void jacobi(
 
           if (j == 0) {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 4*alpha*u(i-1,j) + alpha*v(i+1,j+1) - alpha*v(i+1,j) - alpha*v(i-1,j+1) + alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j+1) + 2*alpha*u(i,j+2) + 4*alpha*u(i-1,j) + alpha*v(i+1,j+1) - alpha*v(i+1,j) - alpha*v(i-1,j+1) + alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j) - alpha*u(i-1,j+1) + alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)));
+            mirror_v(i,j) = (alpha*u(i+1,j+1) - alpha*u(i+1,j) - alpha*u(i-1,j+1) + alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j+1) + 4*alpha*v(i,j+2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)) + eps);
 
           } else if (j == grid_size-1) {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) + 4*alpha*u(i-1,j) - alpha*v(i+1,j-1) + alpha*v(i+1,j) + alpha*v(i-1,j-1) - alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (4*alpha*u(i+1,j) - 4*alpha*u(i,j-1) + 2*alpha*u(i,j-2) + 4*alpha*u(i-1,j) - alpha*v(i+1,j-1) + alpha*v(i+1,j) + alpha*v(i-1,j-1) - alpha*v(i-1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = (-alpha*u(i+1,j-1) + alpha*u(i+1,j) + alpha*u(i-1,j-1) - alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)));
+            mirror_v(i,j) = (-alpha*u(i+1,j-1) + alpha*u(i+1,j) + alpha*u(i-1,j-1) - alpha*u(i-1,j) + 2*alpha*v(i+1,j) - 8*alpha*v(i,j-1) + 4*alpha*v(i,j-2) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/((h*h)*(beta + gamma + (mu_v(i,j)*mu_v(i,j))*wtilde(i,j)) + eps);
 
           } else {
 
-            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+            mirror_phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j) + eps);
 
-            mirror_u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + 4*alpha*u(i-1,j) + (1.0L/2.0L)*alpha*v(i+1,j+1) - 1.0L/2.0L*alpha*v(i+1,j-1) - 1.0L/2.0L*alpha*v(i-1,j+1) + (1.0L/2.0L)*alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+            mirror_u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j+1) + 2*alpha*u(i,j-1) + 4*alpha*u(i-1,j) + (1.0L/2.0L)*alpha*v(i+1,j+1) - 1.0L/2.0L*alpha*v(i+1,j-1) - 1.0L/2.0L*alpha*v(i-1,j+1) + (1.0L/2.0L)*alpha*v(i-1,j-1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j) + eps);
 
-            mirror_v(i,j) = ((1.0L/2.0L)*alpha*u(i+1,j+1) - 1.0L/2.0L*alpha*u(i+1,j-1) - 1.0L/2.0L*alpha*u(i-1,j+1) + (1.0L/2.0L)*alpha*u(i-1,j-1) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+            mirror_v(i,j) = ((1.0L/2.0L)*alpha*u(i+1,j+1) - 1.0L/2.0L*alpha*u(i+1,j-1) - 1.0L/2.0L*alpha*u(i-1,j+1) + (1.0L/2.0L)*alpha*u(i-1,j-1) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i,j-1) + 2*alpha*v(i-1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j) + eps);
 
           }
 
@@ -305,6 +308,13 @@ inline void jacobi(
       }
     } // end iteration over grid
 
-    // printf("iter %d done\n", iter);
+    int nz_phi = 0, nz_mirror_phi = 0;
+    for (int i = 0; i < grid_size; ++i) {
+      for (int j = 0; j < grid_size; ++j) {
+        if (phi_input(i,j) == 0 || isnan(phi_input(i,j))) ++nz_phi;
+        if (mirror_phi_input(i,j) == 0 || isnan(mirror_phi_input(i,j))) ++nz_mirror_phi;
+      }
+    }
+    printf("iter %d done, %d, %d\n", iter, nz_phi, nz_mirror_phi);
   }
 }
