@@ -85,10 +85,10 @@ class TrackingOptimizationProblem(object):
     self.opt = Optimizer()
 
     def cb(old_x, delta_x, true_old_cost, true_improvement, model_improvement, ratio):
-      print '===================CALLBACK==================='
+      print '\n===================CALLBACK==================='
       print old_x, delta_x, true_old_cost, true_improvement, model_improvement, ratio
       old_state = State.FromPacked(self.gp, old_x)
-      print 'Old cost from symbolic:', true_old_cost
+      print 'Old cost:', true_old_cost
       print 'Old cost from hardcoded:', timb_problem_eval_objective(
         self.gp,
         old_state.phi, old_state.u_x, old_state.u_y,
@@ -96,7 +96,18 @@ class TrackingOptimizationProblem(object):
         self.prev_phi, self.curr_wtilde,
         self.params.flow_rigidity_coeff, self.params.flow_norm_coeff
       )
-      print '===================END CALLBACK==================='
+      print 'Model improvement:', model_improvement
+      print 'Model improvement from hardcoded:'
+      mu_0, mu_u, mu_v = timb_linearize_flowed_prev_phi(self.gp, self.prev_phi, old_state.u_x, old_state.u_y)
+      new_state = State.FromPacked(self.gp, old_x + delta_x)
+      print true_old_cost - timb_problem_eval_model_objective(
+        self.gp,
+        new_state.phi, new_state.u_x, new_state.u_y,
+        self.obs, self.obs_weights,
+        mu_0, mu_u, mu_v, self.curr_wtilde,
+        self.params.flow_rigidity_coeff, self.params.flow_norm_coeff
+      )
+      print '===================END CALLBACK===================\n'
     self.opt.add_intermediate_callback(cb)
 
     self.phi_vars = make_var_field(self.opt, 'phi', self.gp)

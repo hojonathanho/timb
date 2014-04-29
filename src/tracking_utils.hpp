@@ -44,8 +44,8 @@ inline double timb_problem_eval_objective(
   // flowed weights
   const DoubleField& wtilde,
 
-  double alpha, // strain cost coeff
-  double beta // norm cost coeff
+  double strain_cost_coeff,
+  double norm_cost_coeff
 ) {
 
   // Evaluate displacement derivatives for the strain cost
@@ -53,10 +53,13 @@ inline double timb_problem_eval_objective(
   DoubleField du_dx(u.grid_params()), du_dy(u.grid_params());
   deriv_x_central(u, du_dx);
   deriv_y_central(u, du_dy);
+  // deriv_x(u, du_dx);
+  // deriv_y(u, du_dy);
   DoubleField dv_dx(v.grid_params()), dv_dy(v.grid_params());
   deriv_x_central(v, dv_dx);
   deriv_y_central(v, dv_dy);
-
+  // deriv_x(v, dv_dx);
+  // deriv_y(v, dv_dy);
   // Evaluate flowed phi for agreement cost (TODO: cache?)
   DoubleField flowed_prev_phi(phi.grid_params());
   apply_flow(prev_phi, u, v, flowed_prev_phi);
@@ -76,10 +79,10 @@ inline double timb_problem_eval_objective(
       agreement_cost += wtilde(i,j) * square(phi(i,j) - flowed_prev_phi(i,j));
 
       // displacement strain cost
-      strain_cost += alpha * (4.*square(du_dx(i,j)) + 2.*square(dv_dx(i,j) + du_dy(i,j)) + 4.*square(dv_dy(i,j)));
+      strain_cost += strain_cost_coeff * (4.*square(du_dx(i,j)) + 2.*square(dv_dx(i,j) + du_dy(i,j)) + 4.*square(dv_dy(i,j)));
 
       // displacement norm cost
-      norm_cost += beta * (square(u(i,j)) + square(v(i,j)));
+      norm_cost += norm_cost_coeff * (square(u(i,j)) + square(v(i,j)));
     }
   }
 
@@ -108,17 +111,21 @@ inline double timb_problem_eval_model_objective(
   // flowed weights
   const DoubleField& wtilde,
 
-  double alpha, // strain cost coeff
-  double beta // norm cost coeff
+  double strain_cost_coeff,
+  double norm_cost_coeff
 ) {
   // Evaluate displacement derivatives for the strain cost
   // TODO: cache this somewhere?
   DoubleField du_dx(u.grid_params()), du_dy(u.grid_params());
   deriv_x_central(u, du_dx);
   deriv_y_central(u, du_dy);
+  // deriv_x(u, du_dx);
+  // deriv_y(u, du_dy);
   DoubleField dv_dx(v.grid_params()), dv_dy(v.grid_params());
   deriv_x_central(v, dv_dx);
   deriv_y_central(v, dv_dy);
+  // deriv_x(v, dv_dx);
+  // deriv_y(v, dv_dy);
 
   double val = 0.;
 
@@ -132,14 +139,37 @@ inline double timb_problem_eval_model_objective(
       val += wtilde(i,j) * square(phi(i,j) - mu_0(i,j) - mu_u(i,j)*u(i,j) - mu_v(i,j)*v(i,j));
 
       // displacement strain cost
-      val += alpha * (4.*square(du_dx(i,j)) + 2.*square(dv_dx(i,j) + du_dy(i,j)) + 4.*square(dv_dy(i,j)));
+      val += strain_cost_coeff * (4.*square(du_dx(i,j)) + 2.*square(dv_dx(i,j) + du_dy(i,j)) + 4.*square(dv_dy(i,j)));
 
       // displacement norm cost
-      val += beta * (square(u(i,j)) + square(v(i,j)));
+      val += norm_cost_coeff * (square(u(i,j)) + square(v(i,j)));
     }
   }
 
   return val;
+}
+
+
+inline void timb_linearize_flowed_prev_phi(
+  const DoubleField& prev_phi,
+  const DoubleField& u, const DoubleField& v,
+  DoubleField& out_0, DoubleField& out_u, DoubleField& out_v
+) {
+
+  const GridParams& gp = prev_phi.grid_params();
+
+  for (int i = 0; i < gp.nx; ++i) {
+    for (int j = 0; j < gp.ny; ++j) {
+      auto xy = gp.to_xy(i, j);
+      double flowed_x = xy.first - u(i,j), flowed_y = xy.second - v(i,j);
+      double flowed_prev_phi_val = prev_phi.eval_xy(flowed_x, flowed_y);
+      auto prev_phi_grad = prev_phi.grad_xy(flowed_x, flowed_y);
+
+      out_0(i,j) = flowed_prev_phi_val + prev_phi_grad.x*u(i,j) + prev_phi_grad.y*v(i,j);
+      out_u(i,j) = -prev_phi_grad.x;
+      out_v(i,j) = -prev_phi_grad.y;
+    }
+  }
 }
 
 

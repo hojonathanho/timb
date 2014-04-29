@@ -134,6 +134,52 @@ double py_timb_problem_eval_objective(
   return timb_problem_eval_objective(phi, u, v, z, w_z, prev_phi, wtilde, alpha, beta);
 }
 
+double py_timb_problem_eval_model_objective(
+  const GridParams& gp,
+
+  py::object py_phi,
+  py::object py_u,
+  py::object py_v,
+
+  // observation values and weights
+  py::object py_z,
+  py::object py_w_z,
+
+  // linearized flow
+  py::object py_mu_0,
+  py::object py_mu_u,
+  py::object py_mu_v,
+  // flowed weights
+  py::object py_wtilde,
+
+  double alpha, // strain cost coeff
+  double beta // norm cost coeff
+) {
+  DoubleField phi(gp), u(gp), v(gp), z(gp), w_z(gp), mu_0(gp), mu_u(gp), mu_v(gp), wtilde(gp);
+  from_numpy(py_phi, phi);
+  from_numpy(py_u, u);
+  from_numpy(py_v, v);
+  from_numpy(py_z, z);
+  from_numpy(py_w_z, w_z);
+  from_numpy(py_mu_0, mu_0);
+  from_numpy(py_mu_u, mu_u);
+  from_numpy(py_mu_v, mu_v);
+  from_numpy(py_wtilde, wtilde);
+  return timb_problem_eval_model_objective(phi, u, v, z, w_z, mu_0, mu_u, mu_v, wtilde, alpha, beta);
+}
+
+py::object py_timb_linearize_flowed_prev_phi(const GridParams& gp, py::object py_prev_phi, py::object py_u, py::object py_v) {
+  DoubleField prev_phi(gp), u(gp), v(gp);
+  from_numpy(py_prev_phi, prev_phi);
+  from_numpy(py_u, u);
+  from_numpy(py_v, v);
+
+  DoubleField out_0(gp), out_u(gp), out_v(gp);
+  timb_linearize_flowed_prev_phi(prev_phi, u, v, out_0, out_u, out_v);
+  return py::make_tuple(to_numpy(out_0), to_numpy(out_u), to_numpy(out_v));
+}
+
+
 struct ExampleCost : public CostFunc {
   Var m_var; double m_c; string m_name;
   ExampleCost(const Var& var, double c, const string& name) : m_var(var), m_c(c), m_name(name) { }
@@ -251,5 +297,6 @@ BOOST_PYTHON_MODULE(ctimb) {
 
   ////////// Tracking optimization problem hardcoded implementation //////////
   py::def("timb_problem_eval_objective", &py_timb_problem_eval_objective);
-
+  py::def("timb_problem_eval_model_objective", &py_timb_problem_eval_model_objective);
+  py::def("timb_linearize_flowed_prev_phi", &py_timb_linearize_flowed_prev_phi);
 }
