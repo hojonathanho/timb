@@ -41,7 +41,7 @@ def main():
   u_0 = np.zeros((size,size))
   v_0 = np.zeros((size,size))
 
-  num_iters = 100
+  num_iters = 1000
 
   out_phi, out_u, out_v = timb.timb_solve_model_problem_jacobi(
     grid_params,

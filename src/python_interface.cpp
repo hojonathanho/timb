@@ -146,7 +146,7 @@ double py_timb_problem_eval_model_objective(
   py::object py_z,
   py::object py_w_z,
 
-  // linearized flow
+  // linearized flowed prev_phi
   py::object py_mu_0,
   py::object py_mu_u,
   py::object py_mu_v,
@@ -241,12 +241,71 @@ py::tuple py_timb_solve_model_problem_jacobi(
   );
 
   if (num_iters % 2 == 0) {
-    std::cout << "hi" << std::endl;
     return py::make_tuple(to_numpy(phi), to_numpy(u), to_numpy(v));
   } else {
-    std::cout << "bye" << std::endl;
     return py::make_tuple(to_numpy(mirror_phi), to_numpy(mirror_u), to_numpy(mirror_v));
   }
+}
+
+py::tuple py_timb_solve_model_problem_gauss_seidel(
+  const GridParams& gp,
+  py::object py_phi_init,
+  py::object py_u_init,
+  py::object py_v_init,
+
+  // observation values and weights
+  py::object py_z,
+  py::object py_w_z,
+
+  // linearized flow
+  py::object py_mu_0,
+  py::object py_mu_u,
+  py::object py_mu_v,
+  // flowed weights
+  py::object py_wtilde,
+
+  double alpha, // strain cost coeff
+  double beta, // norm cost coeff
+
+  double gamma, // soft trust region cost
+  // trust region centers
+  py::object py_phi_0,
+  py::object py_u_0,
+  py::object py_v_0,
+
+  int num_iters
+) {
+
+  assert(gp.eps_x == gp.eps_y && gp.nx == gp.ny); // only works with square cells
+  double h = gp.eps_x;
+  int grid_size = gp.nx;
+
+  DoubleField phi(gp), u(gp), v(gp);
+  DoubleField z(gp), w_z(gp), mu_0(gp), mu_u(gp), mu_v(gp), wtilde(gp);
+  DoubleField phi_0(gp), u_0(gp), v_0(gp);
+  from_numpy(py_phi_init, phi);
+  from_numpy(py_u_init, u);
+  from_numpy(py_v_init, v);
+  from_numpy(py_z, z);
+  from_numpy(py_w_z, w_z);
+  from_numpy(py_mu_0, mu_0);
+  from_numpy(py_mu_u, mu_u);
+  from_numpy(py_mu_v, mu_v);
+  from_numpy(py_wtilde, wtilde);
+  from_numpy(py_phi_0, phi_0);
+  from_numpy(py_u_0, u_0);
+  from_numpy(py_v_0, v_0);
+
+  timb_solve_model_problem_gauss_seidel(
+    phi, u, v,
+    z, w_z,
+    mu_0, mu_u, mu_v, wtilde,
+    alpha, beta,
+    gamma, phi_0, u_0, v_0,
+    h, grid_size, num_iters
+  );
+
+  return py::make_tuple(to_numpy(phi), to_numpy(u), to_numpy(v));
 }
 
 struct ExampleCost : public CostFunc {
@@ -369,4 +428,5 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::def("timb_problem_eval_model_objective", &py_timb_problem_eval_model_objective);
   py::def("timb_linearize_flowed_prev_phi", &py_timb_linearize_flowed_prev_phi);
   py::def("timb_solve_model_problem_jacobi", &py_timb_solve_model_problem_jacobi);
+  py::def("timb_solve_model_problem_gauss_seidel", &py_timb_solve_model_problem_gauss_seidel);
 }
