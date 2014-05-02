@@ -52,15 +52,15 @@ inline double timb_problem_eval_objective(
   // Evaluate displacement derivatives for the strain cost
   // TODO: cache this somewhere?
   DoubleField du_dx(u.grid_params()), du_dy(u.grid_params());
-  deriv_x_central(u, du_dx);
-  deriv_y_central(u, du_dy);
-  // deriv_x(u, du_dx);
-  // deriv_y(u, du_dy);
+  // deriv_x_central(u, du_dx);
+  // deriv_y_central(u, du_dy);
+  deriv_x(u, du_dx);
+  deriv_y(u, du_dy);
   DoubleField dv_dx(v.grid_params()), dv_dy(v.grid_params());
-  deriv_x_central(v, dv_dx);
-  deriv_y_central(v, dv_dy);
-  // deriv_x(v, dv_dx);
-  // deriv_y(v, dv_dy);
+  // deriv_x_central(v, dv_dx);
+  // deriv_y_central(v, dv_dy);
+  deriv_x(v, dv_dx);
+  deriv_y(v, dv_dy);
   // Evaluate flowed phi for agreement cost (TODO: cache?)
   DoubleField flowed_prev_phi(phi.grid_params());
   apply_flow(prev_phi, u, v, flowed_prev_phi);
@@ -118,15 +118,15 @@ inline double timb_problem_eval_model_objective(
   // Evaluate displacement derivatives for the strain cost
   // TODO: cache this somewhere?
   DoubleField du_dx(u.grid_params()), du_dy(u.grid_params());
-  deriv_x_central(u, du_dx);
-  deriv_y_central(u, du_dy);
-  // deriv_x(u, du_dx);
-  // deriv_y(u, du_dy);
+  // deriv_x_central(u, du_dx);
+  // deriv_y_central(u, du_dy);
+  deriv_x(u, du_dx);
+  deriv_y(u, du_dy);
   DoubleField dv_dx(v.grid_params()), dv_dy(v.grid_params());
-  deriv_x_central(v, dv_dx);
-  deriv_y_central(v, dv_dy);
-  // deriv_x(v, dv_dx);
-  // deriv_y(v, dv_dy);
+  // deriv_x_central(v, dv_dx);
+  // deriv_y_central(v, dv_dy);
+  deriv_x(v, dv_dx);
+  deriv_y(v, dv_dy);
 
   double obs_cost = 0.;
   double agreement_cost = 0.;
