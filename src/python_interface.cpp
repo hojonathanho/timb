@@ -180,7 +180,7 @@ py::tuple py_timb_linearize_flowed_prev_phi(const GridParams& gp, py::object py_
   return py::make_tuple(to_numpy(out_0), to_numpy(out_u), to_numpy(out_v));
 }
 
-
+#if 0
 py::tuple py_timb_solve_model_problem_jacobi(
   const GridParams& gp,
   py::object py_phi_init,
@@ -246,6 +246,7 @@ py::tuple py_timb_solve_model_problem_jacobi(
     return py::make_tuple(to_numpy(mirror_phi), to_numpy(mirror_u), to_numpy(mirror_v));
   }
 }
+#endif
 
 py::tuple py_timb_solve_model_problem_gauss_seidel(
   const GridParams& gp,
@@ -427,6 +428,6 @@ BOOST_PYTHON_MODULE(ctimb) {
   py::def("timb_problem_eval_objective", &py_timb_problem_eval_objective);
   py::def("timb_problem_eval_model_objective", &py_timb_problem_eval_model_objective);
   py::def("timb_linearize_flowed_prev_phi", &py_timb_linearize_flowed_prev_phi);
-  py::def("timb_solve_model_problem_jacobi", &py_timb_solve_model_problem_jacobi);
+  // py::def("timb_solve_model_problem_jacobi", &py_timb_solve_model_problem_jacobi);
   py::def("timb_solve_model_problem_gauss_seidel", &py_timb_solve_model_problem_gauss_seidel);
 }

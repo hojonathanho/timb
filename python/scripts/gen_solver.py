@@ -316,10 +316,13 @@ def gen_asdf():
     for a in all_vars:
       a.set_mode(m[0], m[1])
 
+  from joblib import Memory
+  mem = Memory(cachedir='/tmp/joblib')
+
+  range_min, range_max = -2, 2
+  @mem.cache
   def gen_cost_derivs():
     cost = 0
-
-    range_min, range_max = -2, 2
 
     for i in range(range_min, range_max+1):
       for j in range(range_min, range_max+1):
@@ -357,24 +360,45 @@ def gen_asdf():
     for i in range(range_min, range_max+1):
       for j in range(range_min, range_max+1):
         print i,j
-        derivs['phi'][(i,j)] = sympy.simplify(sympy.diff(cost, phi[i,j]))
-        derivs['u'][(i,j)] = sympy.simplify(sympy.diff(cost, u[i,j]))
-        derivs['v'][(i,j)] = sympy.simplify(sympy.diff(cost, v[i,j]))
+        derivs['phi'][(i,j)] = (sympy.simplify(sympy.diff(cost, phi[i,j])), phi[i,j])
+        derivs['u'][(i,j)] = (sympy.simplify(sympy.diff(cost, u[i,j])), u[i,j])
+        derivs['v'][(i,j)] = (sympy.simplify(sympy.diff(cost, v[i,j])), v[i,j])
 
     return cost, derivs
 
-
   cost, derivs = gen_cost_derivs()
 
-  for i in range(-2, 3):
-    # dcost_du = sympy.simplify(sympy.diff(cost, u[i,0]))
-    print replace_names(sympy.printing.ccode(derivs['u'][(i,0)]), 'c', -i, 0)
-    print
+  def print_expr(field_name, i, j):
+    eqn_lhs, var = derivs[field_name][(i,j)] # LHS of the equation Ax - b = 0 (i.e. at the optimum, the gradient is zero)
+    gs_update = sympy.solve(eqn_lhs, var)[0]
+    out = field_name + '(i,j) = ' + replace_names(sympy.printing.ccode(gs_update), 'c', -i, -j) + ';'
+    # get rid of pow(x, 2) and replace with x*x
+    p = re.compile('pow\((.+?), 2\)')
+    return p.sub(r'(\1*\1)', out)
 
-  # dcost_du = sympy.simplify(sympy.diff(cost, u[2,0])/2)
-  # print replace_names(sympy.printing.ccode(dcost_du), 'c')
+  # exprs should equal zero
+  # i.e. they represent the lhs of the equation Ax - b = 0
+  exprs = defaultdict(list)
+  for var in ['phi', 'u', 'v']:
+    exprs['aa'].append(print_expr(derivs, var, range_min, range_min))
+    exprs['ab'].append(print_expr(derivs, var, range_min, range_max-1))
+    exprs['ac'].append(print_expr(derivs, var, range_min, range_max))
+    exprs['ad'].append(print_expr(derivs, var, range_min, 0))
 
+    exprs['ba'].append(print_expr(derivs, var, range_max-1, range_min))
+    exprs['bb'].append(print_expr(derivs, var, range_max-1, range_max-1))
+    exprs['bc'].append(print_expr(derivs, var, range_max-1, range_max))
+    exprs['bd'].append(print_expr(derivs, var, range_max-1, 0))
 
+    exprs['ca'].append(print_expr(derivs, var, range_max, range_min))
+    exprs['cb'].append(print_expr(derivs, var, range_max, range_max-1))
+    exprs['cc'].append(print_expr(derivs, var, range_max, range_max))
+    exprs['cd'].append(print_expr(derivs, var, range_max, 0))
+
+    exprs['da'].append(print_expr(derivs, var, 0, range_min))
+    exprs['db'].append(print_expr(derivs, var, 0, range_max-1))
+    exprs['dc'].append(print_expr(derivs, var, 0, range_max))
+    exprs['dd'].append(print_expr(derivs, var, 0, 0))
 
   code_template = '''
 for (int i = 0; i < grid_size; ++i) {{
@@ -383,15 +407,39 @@ for (int i = 0; i < grid_size; ++i) {{
 
       if (j == 0) {{
 
-        {exprs[ff]}
+        {exprs[aa]}
+
+      }} else if (j == grid_size-2) {{
+
+        {exprs[ab]}
 
       }} else if (j == grid_size-1) {{
 
-        {exprs[fb]}
+        {exprs[ac]}
 
       }} else {{
 
-        {exprs[fc]}
+        {exprs[ad]}
+
+      }}
+
+    }} else if (i == grid_size-2) {{
+
+      if (j == 0) {{
+
+        {exprs[ba]}
+
+      }} else if (j == grid_size-2) {{
+
+        {exprs[bb]}
+
+      }} else if (j == grid_size-1) {{
+
+        {exprs[bc]}
+
+      }} else {{
+
+        {exprs[bd]}
 
       }}
 
@@ -399,15 +447,19 @@ for (int i = 0; i < grid_size; ++i) {{
 
       if (j == 0) {{
 
-        {exprs[bf]}
+        {exprs[ca]}
+
+      }} else if (j == grid_size-2) {{
+
+        {exprs[cb]}
 
       }} else if (j == grid_size-1) {{
 
-        {exprs[bb]}
+        {exprs[cc]}
 
       }} else {{
 
-        {exprs[bc]}
+        {exprs[cd]}
 
       }}
 
@@ -415,15 +467,19 @@ for (int i = 0; i < grid_size; ++i) {{
 
       if (j == 0) {{
 
-        {exprs[cf]}
+        {exprs[da]}
+
+      }} else if (j == grid_size-2) {{
+
+        {exprs[db]}
 
       }} else if (j == grid_size-1) {{
 
-        {exprs[cb]}
+        {exprs[dc]}
 
       }} else {{
 
-        {exprs[cc]}
+        {exprs[dd]}
 
       }}
 
@@ -431,17 +487,7 @@ for (int i = 0; i < grid_size; ++i) {{
   }}
 }}
 '''
-
-
-
-
-
-
-
-
-
-
-
+  print code_template.format(exprs=dict((k, '\n\n        '.join(v)) for (k, v) in exprs.iteritems()))
 
 
 

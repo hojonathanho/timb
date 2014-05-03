@@ -36,9 +36,9 @@ class TrackerParams(object):
     self.observation_coeff = 1.
     self.agreement_coeff = 1.
 
-    self.reweighting_iters = 5 # iterative reweighted least squares iterations
-    self.max_inner_iters = 20 # Levenberg-Marquardt iterations
-    self.lin_solver_iters = 4 # iterations for iterative linear system solver
+    self.reweighting_iters = 10 # iterative reweighted least squares iterations
+    self.max_inner_iters = 10 # Levenberg-Marquardt iterations
+    self.lin_solver_iters = 30 # iterations for iterative linear system solver
 
     # Observation parameters
     self.tsdf_trunc_dist = 10.
@@ -181,10 +181,11 @@ class TrackingOptimizationProblem2(object):
     # Set up logging
     self.logger = logging.getLogger('LM')
     self.logger.setLevel(logging.INFO)
-    ch = logging.StreamHandler()
-    # ch.setLevel(logging.DEBUG)
-    ch.setFormatter(logging.Formatter('>>> %(name)s - %(levelname)s - %(message)s'))
-    self.logger.addHandler(ch)
+    if not self.logger.handlers:
+      ch = logging.StreamHandler()
+      # ch.setLevel(logging.DEBUG)
+      ch.setFormatter(logging.Formatter('>>> %(name)s - %(levelname)s - %(message)s'))
+      self.logger.addHandler(ch)
 
   def set_prev_phi_and_weights(self, prev_phi, weight):
     self.prev_phi, self.prev_weights = prev_phi, weight
@@ -242,9 +243,9 @@ class TrackingOptimizationProblem2(object):
     }
     status = 'incomplete'
 
-    INIT_DAMPING = 1.
+    INIT_DAMPING = 1e-5
     MAX_DAMPING = 1e5
-    MIN_DAMPING = 1e-3
+    MIN_DAMPING = 1e-10
     DAMPING_DECREASE_RATIO = .5
     DAMPING_INCREASE_RATIO = 10.
     IMPROVE_RATIO_THRESHOLD = .25
@@ -339,7 +340,6 @@ class TrackingOptimizationProblem2(object):
     for i in range(self.params.reweighting_iters):
       # solve fixed-weight subproblem
       state, opt_result = self._optimize_once(curr_state, flowed_prev_weights, self.params.max_inner_iters)
-      print state.u_x, state.u_y
       # recalculate weights
       flowed_prev_weights = apply_flow_to_weights(self.gp, self.prev_weights, state.u_x, state.u_y)
 
@@ -347,7 +347,6 @@ class TrackingOptimizationProblem2(object):
       opt_results.append(opt_result)
       curr_state = state
 
-    print results[-1].u_x
     return results[-1], opt_results[-1]
 
 

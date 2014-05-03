@@ -182,6 +182,193 @@ inline void timb_linearize_flowed_prev_phi(
 }
 
 
+inline void timb_solve_model_problem_gauss_seidel(
+  DoubleField& phi,
+  DoubleField& u,
+  DoubleField& v,
+
+  // observation values and weights
+  const DoubleField& z,
+  const DoubleField& w_z,
+
+  // linearized flow
+  const DoubleField& mu_0,
+  const DoubleField& mu_u,
+  const DoubleField& mu_v,
+  // flowed weights
+  const DoubleField& wtilde,
+
+  double alpha, // strain cost coeff
+  double beta, // norm cost coeff
+
+  double gamma, // soft trust region cost
+  // trust region centers
+  const DoubleField& phi_0,
+  const DoubleField& u_0,
+  const DoubleField& v_0,
+
+  double h, // grid spacing
+  int grid_size,
+  int num_iters
+) {
+
+  for (int iter = 0; iter < num_iters; ++iter) {
+
+    for (int i = 0; i < grid_size; ++i) {
+      for (int j = 0; j < grid_size; ++j) {
+        if (i == 0) {
+
+          if (j == 0) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j+1) + 2*alpha*v(i+1,j) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i,j+1) - 2*alpha*u(i,j) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j+1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(6*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-2) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j-1) + 4*alpha*u(i,j+1) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i+1,j+1) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) - 2*alpha*v(i,j+1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(10*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (-2*alpha*u(i,j) + 2*alpha*u(i,j+1) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j-1) + 8*alpha*v(i,j+1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(14*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-1) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i+1,j) + 4*alpha*u(i,j-1) - 2*alpha*v(i+1,j-1) - 2*alpha*v(i+1,j) + 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(8*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (-2*alpha*u(i,j-1) + 2*alpha*u(i,j) + 2*alpha*v(i+1,j) + 8*alpha*v(i,j-1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(10*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i+1,j) + 2*alpha*u(i,j-1) + 2*alpha*u(i,j+1) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(8*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (-2*alpha*u(i,j) + 2*alpha*u(i,j+1) + 2*alpha*v(i+1,j) + 4*alpha*v(i,j-1) + 4*alpha*v(i,j+1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(10*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          }
+
+        } else if (i == grid_size-2) {
+
+          if (j == 0) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 2*alpha*u(i,j+1) + 8*alpha*u(i+1,j) - 2*alpha*v(i,j) + 2*alpha*v(i+1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(14*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (-2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) + 2*alpha*u(i,j+1) - 2*alpha*u(i,j) + 2*alpha*u(i+1,j+1) - 2*alpha*u(i+1,j) + 2*alpha*v(i-1,j) + 4*alpha*v(i,j+1) + 4*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(10*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-2) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 2*alpha*u(i,j-1) + 4*alpha*u(i,j+1) + 8*alpha*u(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) - 2*alpha*v(i,j+1) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i+1,j+1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(18*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j) - 2*alpha*u(i-1,j+1) - 2*alpha*u(i,j) + 2*alpha*u(i,j+1) - 2*alpha*u(i+1,j) + 2*alpha*u(i+1,j+1) + 2*alpha*v(i-1,j) + 4*alpha*v(i,j-1) + 8*alpha*v(i,j+1) + 4*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(18*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-1) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 4*alpha*u(i,j-1) + 8*alpha*u(i+1,j) + 2*alpha*v(i,j-1) + 2*alpha*v(i,j) - 2*alpha*v(i+1,j-1) - 2*alpha*v(i+1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(16*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) - 2*alpha*u(i,j-1) + 2*alpha*u(i,j) - 2*alpha*u(i+1,j-1) + 2*alpha*u(i+1,j) + 2*alpha*v(i-1,j) + 8*alpha*v(i,j-1) + 4*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(14*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 2*alpha*u(i,j-1) + 2*alpha*u(i,j+1) + 8*alpha*u(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(16*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j) - 2*alpha*u(i-1,j+1) - 2*alpha*u(i,j) + 2*alpha*u(i,j+1) - 2*alpha*u(i+1,j) + 2*alpha*u(i+1,j+1) + 2*alpha*v(i-1,j) + 4*alpha*v(i,j-1) + 4*alpha*v(i,j+1) + 4*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(14*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          }
+
+        } else if (i == grid_size-1) {
+
+          if (j == 0) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (8*alpha*u(i-1,j) + 2*alpha*u(i,j+1) - 2*alpha*v(i-1,j) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(10*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (-2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) - 2*alpha*u(i,j+1) + 2*alpha*u(i,j) + 4*alpha*v(i-1,j) + 4*alpha*v(i,j+1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(8*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-2) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (8*alpha*u(i-1,j) + 2*alpha*u(i,j-1) + 4*alpha*u(i,j+1) + 2*alpha*v(i-1,j-1) - 2*alpha*v(i-1,j) - 2*alpha*v(i-1,j+1) - 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + 2*alpha*v(i,j+1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(14*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j) - 2*alpha*u(i-1,j+1) + 2*alpha*u(i,j) - 2*alpha*u(i,j+1) + 4*alpha*v(i-1,j) + 4*alpha*v(i,j-1) + 8*alpha*v(i,j+1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(16*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-1) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (8*alpha*u(i-1,j) + 4*alpha*u(i,j-1) + 2*alpha*v(i-1,j-1) + 2*alpha*v(i-1,j) - 2*alpha*v(i,j-1) - 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) + 2*alpha*u(i,j-1) - 2*alpha*u(i,j) + 4*alpha*v(i-1,j) + 8*alpha*v(i,j-1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (8*alpha*u(i-1,j) + 2*alpha*u(i,j-1) + 2*alpha*u(i,j+1) + 2*alpha*v(i-1,j-1) - 2*alpha*v(i-1,j) - 2*alpha*v(i,j-1) + 2*alpha*v(i,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j) - 2*alpha*u(i-1,j+1) + 2*alpha*u(i,j) - 2*alpha*u(i,j+1) + 4*alpha*v(i-1,j) + 4*alpha*v(i,j-1) + 4*alpha*v(i,j+1) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          }
+
+        } else {
+
+          if (j == 0) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 2*alpha*u(i,j+1) + 4*alpha*u(i+1,j) - 2*alpha*v(i,j) + 2*alpha*v(i+1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(10*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (-2*alpha*u(i-1,j+1) + 2*alpha*u(i-1,j) + 2*alpha*u(i,j+1) - 2*alpha*u(i,j) + 2*alpha*v(i-1,j) + 4*alpha*v(i,j+1) + 2*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(8*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-2) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 2*alpha*u(i,j-1) + 4*alpha*u(i,j+1) + 4*alpha*u(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) - 2*alpha*v(i,j+1) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + 2*alpha*v(i+1,j+1) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(14*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j) - 2*alpha*u(i-1,j+1) - 2*alpha*u(i,j) + 2*alpha*u(i,j+1) + 2*alpha*v(i-1,j) + 4*alpha*v(i,j-1) + 8*alpha*v(i,j+1) + 2*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(16*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else if (j == grid_size-1) {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 4*alpha*u(i,j-1) + 4*alpha*u(i+1,j) + 2*alpha*v(i,j-1) + 2*alpha*v(i,j) - 2*alpha*v(i+1,j-1) - 2*alpha*v(i+1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j-1) - 2*alpha*u(i-1,j) - 2*alpha*u(i,j-1) + 2*alpha*u(i,j) + 2*alpha*v(i-1,j) + 8*alpha*v(i,j-1) + 2*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          } else {
+
+            phi(i,j) = (gamma*phi_0(i,j) + mu_0(i,j)*wtilde(i,j) + mu_u(i,j)*u(i,j)*wtilde(i,j) + mu_v(i,j)*v(i,j)*wtilde(i,j) + w_z(i,j)*z(i,j))/(gamma + wtilde(i,j) + w_z(i,j));
+
+            u(i,j) = (4*alpha*u(i-1,j) + 2*alpha*u(i,j-1) + 2*alpha*u(i,j+1) + 4*alpha*u(i+1,j) + 2*alpha*v(i,j-1) - 2*alpha*v(i,j) - 2*alpha*v(i+1,j-1) + 2*alpha*v(i+1,j) + gamma*(h*h)*u_0(i,j) - (h*h)*mu_0(i,j)*mu_u(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*v(i,j)*wtilde(i,j) + (h*h)*mu_u(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_u(i,j)*mu_u(i,j))*wtilde(i,j));
+
+            v(i,j) = (2*alpha*u(i-1,j) - 2*alpha*u(i-1,j+1) - 2*alpha*u(i,j) + 2*alpha*u(i,j+1) + 2*alpha*v(i-1,j) + 4*alpha*v(i,j-1) + 4*alpha*v(i,j+1) + 2*alpha*v(i+1,j) + gamma*(h*h)*v_0(i,j) - (h*h)*mu_0(i,j)*mu_v(i,j)*wtilde(i,j) - (h*h)*mu_u(i,j)*mu_v(i,j)*u(i,j)*wtilde(i,j) + (h*h)*mu_v(i,j)*phi(i,j)*wtilde(i,j))/(12*alpha + beta*(h*h) + gamma*(h*h) + (h*h)*(mu_v(i,j)*mu_v(i,j))*wtilde(i,j));
+
+          }
+
+        }
+      }
+    } // end iteration over grid
+  } // end gauss-seidel iterations
+
+}
+
+
+#if 0
 inline void timb_solve_model_problem_jacobi(
   DoubleField& phi_input,
   DoubleField& u_input,
@@ -458,3 +645,4 @@ inline void timb_solve_model_problem_gauss_seidel(
     printf("=== gauss-seidel iter %d done, val: %f ===\n", iter, val);
   }
 }
+#endif
