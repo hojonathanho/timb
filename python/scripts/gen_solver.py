@@ -271,7 +271,7 @@ for (int i = 0; i < grid_size; ++i) {{
   print code_template.format(exprs=dict((k, '\n\n        '.join(v)) for (k, v) in code_dict.iteritems()))
 
 
-def gen_asdf():
+def gen_solver():
   all_vars = []
   def add_vars(*args, **kwargs):
     fv = FieldVars(*args, **kwargs)
@@ -371,34 +371,39 @@ def gen_asdf():
   def print_expr(field_name, i, j):
     eqn_lhs, var = derivs[field_name][(i,j)] # LHS of the equation Ax - b = 0 (i.e. at the optimum, the gradient is zero)
     gs_update = sympy.solve(eqn_lhs, var)[0]
+    # return field_name + '(i,j) = ' + replace_names(sympy.printing.latex(gs_update), 'latex', -i, -j)
     out = field_name + '(i,j) = ' + replace_names(sympy.printing.ccode(gs_update), 'c', -i, -j) + ';'
     # get rid of pow(x, 2) and replace with x*x
     p = re.compile('pow\((.+?), 2\)')
     return p.sub(r'(\1*\1)', out)
 
+  print print_expr('phi', 0, 0)
+  print print_expr('u', 0, 0)
+  print print_expr('v', 0, 0)
+
   # exprs should equal zero
   # i.e. they represent the lhs of the equation Ax - b = 0
   exprs = defaultdict(list)
   for var in ['phi', 'u', 'v']:
-    exprs['aa'].append(print_expr(derivs, var, range_min, range_min))
-    exprs['ab'].append(print_expr(derivs, var, range_min, range_max-1))
-    exprs['ac'].append(print_expr(derivs, var, range_min, range_max))
-    exprs['ad'].append(print_expr(derivs, var, range_min, 0))
+    exprs['aa'].append(print_expr(var, range_min, range_min))
+    exprs['ab'].append(print_expr(var, range_min, range_max-1))
+    exprs['ac'].append(print_expr(var, range_min, range_max))
+    exprs['ad'].append(print_expr(var, range_min, 0))
 
-    exprs['ba'].append(print_expr(derivs, var, range_max-1, range_min))
-    exprs['bb'].append(print_expr(derivs, var, range_max-1, range_max-1))
-    exprs['bc'].append(print_expr(derivs, var, range_max-1, range_max))
-    exprs['bd'].append(print_expr(derivs, var, range_max-1, 0))
+    exprs['ba'].append(print_expr(var, range_max-1, range_min))
+    exprs['bb'].append(print_expr(var, range_max-1, range_max-1))
+    exprs['bc'].append(print_expr(var, range_max-1, range_max))
+    exprs['bd'].append(print_expr(var, range_max-1, 0))
 
-    exprs['ca'].append(print_expr(derivs, var, range_max, range_min))
-    exprs['cb'].append(print_expr(derivs, var, range_max, range_max-1))
-    exprs['cc'].append(print_expr(derivs, var, range_max, range_max))
-    exprs['cd'].append(print_expr(derivs, var, range_max, 0))
+    exprs['ca'].append(print_expr(var, range_max, range_min))
+    exprs['cb'].append(print_expr(var, range_max, range_max-1))
+    exprs['cc'].append(print_expr(var, range_max, range_max))
+    exprs['cd'].append(print_expr(var, range_max, 0))
 
-    exprs['da'].append(print_expr(derivs, var, 0, range_min))
-    exprs['db'].append(print_expr(derivs, var, 0, range_max-1))
-    exprs['dc'].append(print_expr(derivs, var, 0, range_max))
-    exprs['dd'].append(print_expr(derivs, var, 0, 0))
+    exprs['da'].append(print_expr(var, 0, range_min))
+    exprs['db'].append(print_expr(var, 0, range_max-1))
+    exprs['dc'].append(print_expr(var, 0, range_max))
+    exprs['dd'].append(print_expr(var, 0, 0))
 
   code_template = '''
 for (int i = 0; i < grid_size; ++i) {{
@@ -494,7 +499,7 @@ for (int i = 0; i < grid_size; ++i) {{
 def main():
   np.random.seed(0)
   random.seed(0)
-  gen_asdf()
+  gen_solver()
 
 if __name__ == '__main__':
   main()
